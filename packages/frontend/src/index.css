@@ -1,0 +1,72 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* SpreadJS container styles */
+.spreadjs-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Chat panel styles */
+.chat-panel {
+  border-left: 1px solid #e5e7eb;
+  background: #fafafa;
+}
+
+/* Code editor styles */
+.monaco-editor {
+  border-radius: 6px;
+  border: 1px solid #e5e7eb;
+}
+
+/* Tool call item styles */
+.tool-call-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  background: white;
+}
+
+.tool-call-pending {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.tool-call-success {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
+.tool-call-error {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
