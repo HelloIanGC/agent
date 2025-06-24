@@ -567,16 +567,7 @@ Important: Generate ONLY what's needed. Use your best judgment about SpreadJS AP
 
     return `Available SpreadJS documentation and code examples:
 
-${docs.documents.map((doc, index) => `
-Document ${index + 1}: ${doc.title}
-${doc.codeExamples && doc.codeExamples.length > 0 ? `
-Code Examples:
-${doc.codeExamples.map(code => `\`\`\`javascript\n${code}\n\`\`\``).join('\n')}
-` : ''}
-${doc.apiMethods && doc.apiMethods.length > 0 ? `
-API Methods: ${doc.apiMethods.join(', ')}
-` : ''}
-`).join('\n---\n')}
+${docs.documents.join('\n---\n')}
 
 Use these examples as reference to generate accurate SpreadJS state queries.
 `;
@@ -991,12 +982,7 @@ Generate corrected SpreadJS code that addresses these issues.`
       return "No documentation available";
     }
 
-    return docs.documents.map(doc => `
-Title: ${doc.title || 'Untitled'}
-Content: ${doc.content || 'No content'}
-Code Examples:
-${doc.codeExamples ? doc.codeExamples.join('\n---\n') : 'No examples'}
-`).join('\n=================\n');
+    return docs.documents.join('\n---\n');
   }
 
   /**
@@ -1011,7 +997,7 @@ ${doc.codeExamples ? doc.codeExamples.join('\n---\n') : 'No examples'}
       return [];
     }
 
-    return docs.documents.map(doc => doc.title || 'Untitled Document');
+    return docs.documents.map(doc => doc.pageTitle || 'Untitled Document');
   }
 }
 

@@ -119,7 +119,7 @@ const SpreadSheetComponent: React.FC<SpreadSheetComponentProps> = ({ onReady }) 
 
         // 填充数据
         salesData.forEach((row, rowIndex) => {
-          row.forEach((cell, colIndex) => {
+          row.forEach((_, colIndex) => {
             const actualRow = rowIndex + 1;
             // 设置数字格式
             if (colIndex === 4 || colIndex === 8 || colIndex === 9) { // 价格列

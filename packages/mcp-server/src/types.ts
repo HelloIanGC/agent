@@ -6,12 +6,17 @@ export interface Context7Response {
   error?: string;
 }
 
+export interface CodeListItem {
+  language: string;
+  code: string;
+}
+
 export interface Context7Document {
-  title: string;
-  content: string;
-  codeExamples: string[];
-  apiMethods: string[];
-  relevanceScore: number;
+  codeTitle: string;
+  codeDescription: string;
+  pageTitle: string;
+  codeList: CodeListItem[];
+  relevance: number;
 }
 
 // SpreadJS Query types
