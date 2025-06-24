@@ -1,17 +1,14 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.logger = exports.Logger = exports.LogLevel = void 0;
-const config_js_1 = require("./config.js");
-var LogLevel;
+import { config } from './config.js';
+export var LogLevel;
 (function (LogLevel) {
     LogLevel[LogLevel["ERROR"] = 0] = "ERROR";
     LogLevel[LogLevel["WARN"] = 1] = "WARN";
     LogLevel[LogLevel["INFO"] = 2] = "INFO";
     LogLevel[LogLevel["DEBUG"] = 3] = "DEBUG";
-})(LogLevel || (exports.LogLevel = LogLevel = {}));
-class Logger {
+})(LogLevel || (LogLevel = {}));
+export class Logger {
     constructor() {
-        this.logLevel = this.parseLogLevel(config_js_1.config.server.logLevel);
+        this.logLevel = this.parseLogLevel(config.server.logLevel);
     }
     static getInstance() {
         if (!Logger.instance) {
@@ -107,6 +104,5 @@ class Logger {
         this.info(`Performance: ${operation} took ${duration}ms`, context, requestId);
     }
 }
-exports.Logger = Logger;
 // Export singleton instance
-exports.logger = Logger.getInstance();
+export const logger = Logger.getInstance();

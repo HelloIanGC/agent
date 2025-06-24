@@ -1,13 +1,10 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.DevLogger = void 0;
-const logger_js_1 = require("../logger.js");
+import { Logger as BaseLogger } from '../logger.js';
 /**
  * 改进的日志工具 - 替换分散的console.log
  */
-class DevLogger {
+export class DevLogger {
     constructor() {
-        this.baseLogger = logger_js_1.Logger.getInstance();
+        this.baseLogger = BaseLogger.getInstance();
         this.isDevelopment = process.env.NODE_ENV === 'development';
     }
     static getInstance() {
@@ -93,4 +90,3 @@ class DevLogger {
         }
     }
 }
-exports.DevLogger = DevLogger;

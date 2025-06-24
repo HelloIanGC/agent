@@ -1,17 +1,14 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.MCPTools = void 0;
-const context7_client_js_1 = require("./context7-client.js");
-const config_js_1 = require("./config.js");
-const constants_js_1 = require("./utils/constants.js");
+import { Context7Client } from './context7-client.js';
+import { config } from './config.js';
+import { TIMEOUTS, ERROR_MESSAGES, LIMITS } from './utils/constants.js';
 // Simple UUID generator
 function generateId() {
     return Math.random().toString(36).substring(2) + Date.now().toString(36);
 }
-class MCPTools {
+export class MCPTools {
     constructor() {
         this.wsClients = new Set();
-        this.context7Client = new context7_client_js_1.Context7Client();
+        this.context7Client = new Context7Client();
     }
     addWSClient(client) {
         this.wsClients.add(client);
@@ -94,7 +91,7 @@ class MCPTools {
     async executeOperationOnFrontend(code, description) {
         // Validate code before execution
         if (!this.isCodeSafe(code)) {
-            throw new Error(constants_js_1.ERROR_MESSAGES.CODE_UNSAFE);
+            throw new Error(ERROR_MESSAGES.CODE_UNSAFE);
         }
         return new Promise((resolve, reject) => {
             const operationId = generateId();
@@ -108,8 +105,8 @@ class MCPTools {
                     }
                 });
                 pendingClients.clear();
-                reject(new Error(`${constants_js_1.ERROR_MESSAGES.OPERATION_TIMEOUT} after ${constants_js_1.TIMEOUTS.OPERATION_TIMEOUT}ms`));
-            }, constants_js_1.TIMEOUTS.OPERATION_TIMEOUT);
+                reject(new Error(`${ERROR_MESSAGES.OPERATION_TIMEOUT} after ${TIMEOUTS.OPERATION_TIMEOUT}ms`));
+            }, TIMEOUTS.OPERATION_TIMEOUT);
             // Create response handler with proper cleanup
             const responseHandler = (message) => {
                 try {
@@ -164,19 +161,19 @@ class MCPTools {
     }
     isCodeSafe(code) {
         // Check code length using constants
-        if (code.length > constants_js_1.LIMITS.MAX_CODE_LENGTH) {
+        if (code.length > LIMITS.MAX_CODE_LENGTH) {
             return false;
         }
         // Check for dangerous patterns using config
-        for (const pattern of config_js_1.config.security.blockedPatterns) {
+        for (const pattern of config.security.blockedPatterns) {
             if (pattern.test(code)) {
                 return false;
             }
         }
         // Check for at least one allowed pattern (optional validation)
-        const hasAllowedPattern = config_js_1.config.security.allowedPatterns.some(pattern => pattern.test(code));
+        const hasAllowedPattern = config.security.allowedPatterns.some(pattern => pattern.test(code));
         // For SpreadJS operations, we expect at least some valid patterns
-        if (code.length > constants_js_1.LIMITS.MIN_CODE_LENGTH_FOR_VALIDATION && !hasAllowedPattern) {
+        if (code.length > LIMITS.MIN_CODE_LENGTH_FOR_VALIDATION && !hasAllowedPattern) {
             return false;
         }
         return true;
@@ -193,64 +190,90 @@ class MCPTools {
         return [
             {
                 name: 'query_context7',
-                description: 'Query Context7 to get SpreadJS API documentation',
+                description: 'Query Context7 to get SpreadJS API documentation when you need to understand how to use SpreadJS APIs',
                 inputSchema: {
                     type: 'object',
                     properties: {
-                        topic: { type: 'string' },
-                        maxTokens: { type: 'number' }
+                        topic: {
+                            type: 'string',
+                            description: 'What SpreadJS functionality you need help with (e.g., "add table", "cell formatting", "range operations")'
+                        },
+                        maxTokens: {
+                            type: 'number',
+                            description: 'Maximum tokens to retrieve (default: 5000)',
+                            default: 5000
+                        }
                     },
                     required: ['topic']
                 }
             },
             {
-                name: 'execute_spreadjs_queries',
-                description: 'Execute read-only SpreadJS queries',
+                name: 'query_spreadjs',
+                description: 'Query current SpreadJS state to understand what data exists and how things are configured',
                 inputSchema: {
                     type: 'object',
                     properties: {
-                        queries: { type: 'array' }
+                        queries: {
+                            type: 'array',
+                            description: 'Array of JavaScript queries to execute on SpreadJS instance',
+                            items: {
+                                type: 'object',
+                                properties: {
+                                    code: {
+                                        type: 'string',
+                                        description: 'JavaScript code to get SpreadJS state (e.g., "spread.getActiveSheet().getRowCount()")'
+                                    },
+                                    description: {
+                                        type: 'string',
+                                        description: 'What this query is checking'
+                                    },
+                                    resultKey: {
+                                        type: 'string',
+                                        description: 'Key to store the result under'
+                                    }
+                                },
+                                required: ['code', 'description', 'resultKey']
+                            }
+                        }
                     },
                     required: ['queries']
                 }
             },
             {
-                name: 'execute_spreadjs_operations',
-                description: 'Execute SpreadJS operations',
+                name: 'query_user',
+                description: 'Ask the user a question when you need clarification about their requirements',
                 inputSchema: {
                     type: 'object',
                     properties: {
-                        code: { type: 'string' },
-                        description: { type: 'string' }
-                    },
-                    required: ['code', 'description']
-                }
-            },
-            {
-                name: 'validate_user_intent',
-                description: 'Validate execution results against user intent for Agent self-verification',
-                inputSchema: {
-                    type: 'object',
-                    properties: {
-                        userRequest: {
+                        question: {
                             type: 'string',
-                            description: 'Original user request'
+                            description: 'The question you want to ask the user for clarification'
                         },
-                        executedCode: {
+                        context: {
                             type: 'string',
-                            description: 'Code that was executed'
-                        },
-                        stateDiff: {
-                            type: 'object',
-                            description: 'State comparison result'
-                        },
-                        expectedOutcome: {
-                            type: 'string',
-                            description: 'AI understanding of expected result',
+                            description: 'Additional context about why you are asking this question',
                             default: ''
                         }
                     },
-                    required: ['userRequest', 'executedCode', 'stateDiff']
+                    required: ['question']
+                }
+            },
+            {
+                name: 'execute_spreadjs',
+                description: 'Execute SpreadJS operations to modify the spreadsheet',
+                inputSchema: {
+                    type: 'object',
+                    properties: {
+                        code: {
+                            type: 'string',
+                            description: 'JavaScript code to execute on SpreadJS instance'
+                        },
+                        description: {
+                            type: 'string',
+                            description: 'What this operation does'
+                        }
+                    },
+                    required: ['code', 'description']
                 }
             }
         ];
@@ -285,12 +308,12 @@ class MCPTools {
             throw error;
         }
     }
-    async executeSpreadJSQueries(args) {
+    async querySpreadjs(args) {
         const id = generateId();
         const startTime = Date.now();
         this.broadcastToClients({
             type: 'tool_call',
-            data: { id, name: 'execute_spreadjs_queries', status: 'pending', args },
+            data: { id, name: 'query_spreadjs', status: 'pending', args },
             timestamp: startTime,
             id: generateId()
         });
@@ -319,7 +342,7 @@ class MCPTools {
             };
             this.broadcastToClients({
                 type: 'tool_call',
-                data: { id, name: 'execute_spreadjs_queries', status: 'success', result: response },
+                data: { id, name: 'query_spreadjs', status: 'success', result: response },
                 timestamp: Date.now(),
                 id: generateId()
             });
@@ -329,19 +352,50 @@ class MCPTools {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             this.broadcastToClients({
                 type: 'tool_call',
-                data: { id, name: 'execute_spreadjs_queries', status: 'error', error: errorMessage },
+                data: { id, name: 'query_spreadjs', status: 'error', error: errorMessage },
                 timestamp: Date.now(),
                 id: generateId()
             });
             throw error;
         }
     }
-    async executeSpreadJSOperations(args) {
+    async queryUser(args) {
         const id = generateId();
         const startTime = Date.now();
         this.broadcastToClients({
             type: 'tool_call',
-            data: { id, name: 'execute_spreadjs_operations', status: 'pending', args },
+            data: { id, name: 'query_user', status: 'pending', args },
+            timestamp: startTime,
+            id: generateId()
+        });
+        try {
+            // Send question to user via WebSocket and wait for response
+            const userResponse = await this.askUserQuestion(args.question, args.context);
+            this.broadcastToClients({
+                type: 'tool_call',
+                data: { id, name: 'query_user', status: 'success', result: userResponse },
+                timestamp: Date.now(),
+                id: generateId()
+            });
+            return userResponse;
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            this.broadcastToClients({
+                type: 'tool_call',
+                data: { id, name: 'query_user', status: 'error', error: errorMessage },
+                timestamp: Date.now(),
+                id: generateId()
+            });
+            throw error;
+        }
+    }
+    async executeSpreadjs(args) {
+        const id = generateId();
+        const startTime = Date.now();
+        this.broadcastToClients({
+            type: 'tool_call',
+            data: { id, name: 'execute_spreadjs', status: 'pending', args },
             timestamp: startTime,
             id: generateId()
         });
@@ -354,13 +408,33 @@ class MCPTools {
         try {
             // Execute real operation on frontend via WebSocket
             const operationResult = await this.executeOperationOnFrontend(args.code, args.description);
+            let verificationResult;
+            // Execute verification code if provided
+            if (args.verificationCode) {
+                try {
+                    verificationResult = await this.executeOperationOnFrontend(args.verificationCode, `Verification for: ${args.description}`);
+                }
+                catch (verificationError) {
+                    console.warn('Verification failed:', verificationError);
+                    verificationResult = { error: 'Verification failed', details: verificationError };
+                }
+            }
             const response = {
                 success: true,
-                result: operationResult
+                result: {
+                    ...operationResult,
+                    verification: verificationResult
+                }
             };
             this.broadcastToClients({
                 type: 'execution_result',
                 data: response,
+                timestamp: Date.now(),
+                id: generateId()
+            });
+            this.broadcastToClients({
+                type: 'tool_call',
+                data: { id, name: 'execute_spreadjs', status: 'success', result: response },
                 timestamp: Date.now(),
                 id: generateId()
             });
@@ -369,156 +443,68 @@ class MCPTools {
         catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error';
             this.broadcastToClients({
-                type: 'error',
-                data: { error: errorMessage },
-                timestamp: Date.now(),
-                id: generateId()
-            });
-            return {
-                success: false,
-                error: errorMessage
-            };
-        }
-    }
-    async validateUserIntent(args) {
-        const id = generateId();
-        const startTime = Date.now();
-        this.broadcastToClients({
-            type: 'tool_call',
-            data: { id, name: 'validate_user_intent', status: 'pending', args },
-            timestamp: startTime,
-            id: generateId()
-        });
-        try {
-            // Perform intelligent validation analysis
-            const validation = this.performIntentValidation(args.userRequest, args.executedCode, args.stateDiff, args.expectedOutcome);
-            this.broadcastToClients({
                 type: 'tool_call',
-                data: { id, name: 'validate_user_intent', status: 'success', result: validation },
-                timestamp: Date.now(),
-                id: generateId()
-            });
-            return validation;
-        }
-        catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            this.broadcastToClients({
-                type: 'tool_call',
-                data: { id, name: 'validate_user_intent', status: 'error', error: errorMessage },
+                data: { id, name: 'execute_spreadjs', status: 'error', error: errorMessage },
                 timestamp: Date.now(),
                 id: generateId()
             });
             throw error;
         }
     }
-    performIntentValidation(userRequest, executedCode, stateDiff, expectedOutcome) {
-        try {
-            // Analyze user request to understand intent
-            const intentAnalysis = this.analyzeUserIntent(userRequest);
-            // Check if query results indicate successful execution
-            const executionCheck = this.checkExecutionSuccess(intentAnalysis, stateDiff);
-            // Determine validation result based on targeted query results
-            const validationResult = {
-                success: executionCheck.isSuccessful,
-                confidence: executionCheck.confidence,
-                analysis: {
-                    userIntent: intentAnalysis,
-                    queryResults: stateDiff,
-                    executionCheck: executionCheck.details
-                },
-                recommendations: executionCheck.isSuccessful ? [] : this.generateExecutionRecommendations(intentAnalysis, stateDiff)
-            };
-            return validationResult;
-        }
-        catch (error) {
-            return {
-                success: false,
-                error: error instanceof Error ? error.message : 'Validation failed',
-                confidence: 0
-            };
-        }
-    }
-    analyzeUserIntent(userRequest) {
-        // Return basic intent structure without hardcoded pattern matching
-        // Let AI decide the appropriate actions based on user request
-        const intent = {
-            userRequest: userRequest,
-            requestType: 'user_operation',
-            timestamp: Date.now()
-        };
-        return intent;
-    }
-    checkExecutionSuccess(intent, queryResults) {
-        const executionCheck = {
-            isSuccessful: false,
-            confidence: 0,
-            details: []
-        };
-        try {
-            // Check if we have valid query results
-            if (!queryResults || !queryResults.success) {
-                executionCheck.details.push('Query execution failed');
-                executionCheck.confidence = 10;
-                return executionCheck;
-            }
-            const results = queryResults.results || {};
-            // Simple execution success check without hardcoded pattern matching
-            // Let AI interpret the results naturally
-            if (Object.keys(results).length > 0) {
-                executionCheck.isSuccessful = true;
-                executionCheck.confidence = 70;
-                executionCheck.details.push('Query returned results, execution likely successful');
-            }
-            else {
-                executionCheck.details.push('No results returned from query execution');
-                executionCheck.confidence = 30;
-            }
-        }
-        catch (error) {
-            executionCheck.details.push('Error during execution check');
-            executionCheck.confidence = 0;
-        }
-        return executionCheck;
-    }
-    checkForValueChanges(results, intent) {
-        // Check if query results indicate value changes
-        for (const key in results) {
-            const result = results[key];
-            if (result && typeof result === 'object') {
-                // Look for before/after patterns or changed values
-                if (result.value !== undefined || result.cell !== undefined) {
-                    return true;
+    async askUserQuestion(question, context) {
+        return new Promise((resolve, reject) => {
+            const questionId = generateId();
+            // Set timeout for user response (5 minutes)
+            const timeout = setTimeout(() => {
+                reject(new Error('User response timeout after 5 minutes'));
+            }, 300000);
+            // Create response handler
+            const responseHandler = (message) => {
+                try {
+                    const data = JSON.parse(message);
+                    if (data.type === 'user_response' && data.questionId === questionId) {
+                        clearTimeout(timeout);
+                        // Clean up listeners
+                        this.wsClients.forEach(client => {
+                            if (client.readyState === 1) {
+                                client.removeListener('message', responseHandler);
+                            }
+                        });
+                        resolve({
+                            question,
+                            answer: data.answer,
+                            timestamp: Date.now()
+                        });
+                    }
                 }
-            }
-        }
-        return false;
-    }
-    checkForFormatChanges(results, intent) {
-        // Check if query results indicate format changes
-        for (const key in results) {
-            const result = results[key];
-            if (result && typeof result === 'object') {
-                // Look for format or style changes
-                if (result.format !== undefined || result.style !== undefined) {
-                    return true;
+                catch (err) {
+                    // Ignore parse errors for non-JSON messages
                 }
+            };
+            // Add response handler to all clients
+            this.wsClients.forEach(client => {
+                if (client.readyState === 1) {
+                    client.on('message', responseHandler);
+                }
+            });
+            // Send question to all connected clients
+            const questionMessage = {
+                id: generateId(),
+                type: 'user_question',
+                timestamp: Date.now(),
+                data: {
+                    questionId,
+                    question,
+                    context: context || '',
+                    requiresResponse: true
+                }
+            };
+            this.broadcastToClients(questionMessage);
+            // If no clients connected, reject immediately
+            if (this.wsClients.size === 0) {
+                clearTimeout(timeout);
+                reject(new Error('No clients connected to receive user question'));
             }
-        }
-        return false;
-    }
-    generateExecutionRecommendations(intent, queryResults) {
-        const recommendations = [];
-        if (!queryResults || !queryResults.success) {
-            recommendations.push('Query execution failed. Check frontend connection and code syntax.');
-            return recommendations;
-        }
-        const results = queryResults.results || {};
-        if (Object.keys(results).length === 0) {
-            recommendations.push('No query results returned. Verify query code is generating return values.');
-        }
-        // Generic recommendation without hardcoded pattern matching
-        recommendations.push('Review query results to determine if operation achieved desired outcome.');
-        return recommendations;
+        });
     }
 }
-exports.MCPTools = MCPTools;

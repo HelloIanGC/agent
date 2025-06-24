@@ -1,20 +1,18 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.config = exports.Config = void 0;
-const dotenv_1 = __importDefault(require("dotenv"));
-const path_1 = __importDefault(require("path"));
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 // Load .env from project root directory
 const possibleEnvPaths = [
-    path_1.default.resolve(process.cwd(), '../../.env'), // From packages/mcp-server
-    path_1.default.resolve(process.cwd(), '.env'), // From current directory
-    path_1.default.resolve(__dirname, '../../../.env'), // From dist/src
+    path.resolve(process.cwd(), '../../.env'), // From packages/mcp-server
+    path.resolve(process.cwd(), '.env'), // From current directory
+    path.resolve(__dirname, '../../../.env'), // From dist/src
 ];
 let envLoaded = false;
 for (const envPath of possibleEnvPaths) {
-    const result = dotenv_1.default.config({ path: envPath });
+    const result = dotenv.config({ path: envPath });
     if (!result.error) {
         console.log(`✅ Environment loaded from: ${envPath}`);
         envLoaded = true;
@@ -29,7 +27,7 @@ console.log('🔧 Environment check:');
 console.log('- OPENROUTER_API_KEY exists:', !!process.env.OPENROUTER_API_KEY);
 console.log('- OPENROUTER_MODEL:', process.env.OPENROUTER_MODEL);
 console.log('- Current working directory:', process.cwd());
-class Config {
+export class Config {
     constructor() {
         this.server = {
             port: parseInt(process.env.MCP_SERVER_PORT || '3001', 10),
@@ -106,6 +104,5 @@ class Config {
         return this.server.nodeEnv === 'production';
     }
 }
-exports.Config = Config;
 // Export singleton instance
-exports.config = new Config();
+export const config = new Config();

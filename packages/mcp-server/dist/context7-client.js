@@ -1,12 +1,9 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.Context7Client = void 0;
-class Context7Client {
+export class Context7Client {
     constructor() {
         this.baseUrl = 'https://context7.com/api/v1/llmstxt';
         this.spreadjsDocUrl = 'developer_mescius_com-spreadjs-docs-llms.txt';
     }
-    async querySpreadJSDocumentation(topic, maxTokens = 2000) {
+    async querySpreadJSDocumentation(topic, maxTokens = 5000) {
         try {
             console.log(`[Context7Client] Querying SpreadJS documentation for topic: ${topic}`);
             // Use JSON format with proper headers as shown in official documentation
@@ -29,8 +26,10 @@ class Context7Client {
             }
             // Parse as JSON since we're using type=json parameter
             const data = await response.json();
-            console.log(`[Context7Client] Received JSON response from Context7:`, Object.keys(data));
-            return this.transformContext7Response(data, topic);
+            console.log(`[Context7Client] Received JSON response from Context7 with length:`, data.length);
+            const result = this.transformContext7Response(data, topic);
+            console.log(`[Context7Client] the best document is:`, result.documents[0]);
+            return result;
         }
         catch (error) {
             console.error('[Context7Client] Error querying documentation:', error);
@@ -66,7 +65,8 @@ class Context7Client {
                     // If it's a single object, treat it as one item
                     items = [data];
                 }
-                items.forEach((item, index) => {
+                // Take top 3 most relevant results and convert them directly
+                items.slice(0, 3).forEach((item, index) => {
                     const doc = this.parseContext7Item(item, topic, index);
                     if (doc) {
                         documents.push(doc);
@@ -76,7 +76,7 @@ class Context7Client {
             // Handle legacy text-based markdown format
             else if (typeof data === 'string') {
                 const parsedDocs = this.parseMarkdownDocuments(data, topic);
-                documents.push(...parsedDocs);
+                documents.push(...parsedDocs.slice(0, 3)); // Take top 3
             }
             if (documents.length === 0) {
                 console.log('[Context7Client] No documentation found for topic:', topic);
@@ -86,9 +86,8 @@ class Context7Client {
                     totalTokens: 0
                 };
             }
-            // Sort by relevance score
-            documents.sort((a, b) => b.relevanceScore - a.relevanceScore);
-            const totalTokens = documents.reduce((sum, doc) => sum + doc.content.length / 4, 0);
+            // Documents are already sorted by Context7's relevance, no need to re-sort
+            const totalTokens = documents.reduce((sum, doc) => sum + (doc.content.length / 4), 0);
             return {
                 success: true,
                 documents,
@@ -162,11 +161,7 @@ class Context7Client {
                 console.warn('Markdown section missing title, skipping:', section.substring(0, 100));
                 return null;
             }
-            // Extract API methods from code
-            const apiMethods = this.extractApiMethods(code);
             const codeExamples = code.trim() ? [code.trim()] : [];
-            // Calculate relevance score
-            const relevanceScore = this.calculateRelevanceScore(section, topic);
             // Create structured content
             const content = `
 # ${title}
@@ -186,8 +181,8 @@ ${code.trim()}
                 title,
                 content,
                 codeExamples,
-                apiMethods,
-                relevanceScore
+                apiMethods: [], // No need to extract API methods
+                relevanceScore: 100 - (index * 10) // Simple scoring based on order
             };
         }
         catch (error) {
@@ -205,17 +200,9 @@ ${code.trim()}
             }
             // Extract code examples from codeList
             const codeExamples = [];
-            const apiMethods = [];
             codeList.forEach((codeItem) => {
                 if (codeItem.code) {
                     codeExamples.push(codeItem.code);
-                    // Extract API methods from the code
-                    const methods = this.extractApiMethods(codeItem.code);
-                    methods.forEach(method => {
-                        if (!apiMethods.includes(method)) {
-                            apiMethods.push(method);
-                        }
-                    });
                 }
             });
             // Create content from the structured data
@@ -236,8 +223,8 @@ ${codeExamples.map((code, idx) => `\`\`\`${codeLanguage || 'javascript'}\n${code
                 title: codeTitle || `SpreadJS Example ${index + 1}`,
                 content,
                 codeExamples,
-                apiMethods,
-                relevanceScore: (relevance || 0) * 100 // Convert to 0-100 scale
+                apiMethods: [], // Context7 already provides relevant results, no need to extract methods
+                relevanceScore: (relevance || 0) * 100 // Use Context7's relevance score
             };
         }
         catch (error) {
@@ -245,70 +232,4 @@ ${codeExamples.map((code, idx) => `\`\`\`${codeLanguage || 'javascript'}\n${code
             return null;
         }
     }
-    parseContentToDocument(content, topic) {
-        // Extract code examples (code blocks between ``` or similar patterns)
-        const codeExamples = this.extractCodeExamples(content);
-        // Extract API methods (patterns like .methodName( or methodName: function)
-        const apiMethods = this.extractApiMethods(content);
-        // Calculate relevance score based on topic occurrence
-        const relevanceScore = this.calculateRelevanceScore(content, topic);
-        return {
-            title: `SpreadJS Documentation - ${topic}`,
-            content,
-            codeExamples,
-            apiMethods,
-            relevanceScore
-        };
-    }
-    extractCodeExamples(content) {
-        const codeExamples = [];
-        // Match code blocks with ```
-        const codeBlockRegex = /```[\w]*\n([\s\S]*?)\n```/g;
-        let match;
-        while ((match = codeBlockRegex.exec(content)) !== null) {
-            codeExamples.push(match[1].trim());
-        }
-        // Match inline code or single line examples
-        const inlineCodeRegex = /`([^`]+)`/g;
-        while ((match = inlineCodeRegex.exec(content)) !== null) {
-            if (match[1].includes('spread') || match[1].includes('sheet') || match[1].includes('cell')) {
-                codeExamples.push(match[1]);
-            }
-        }
-        return codeExamples;
-    }
-    extractApiMethods(content) {
-        const apiMethods = [];
-        // Match method calls like .methodName(
-        const methodCallRegex = /\.(\w+)\s*\(/g;
-        let match;
-        while ((match = methodCallRegex.exec(content)) !== null) {
-            if (!apiMethods.includes(match[1])) {
-                apiMethods.push(match[1]);
-            }
-        }
-        // Match function definitions
-        const functionDefRegex = /(\w+)\s*:\s*function|function\s+(\w+)/g;
-        while ((match = functionDefRegex.exec(content)) !== null) {
-            const methodName = match[1] || match[2];
-            if (methodName && !apiMethods.includes(methodName)) {
-                apiMethods.push(methodName);
-            }
-        }
-        return apiMethods;
-    }
-    calculateRelevanceScore(content, topic) {
-        const contentLower = content.toLowerCase();
-        const topicLower = topic.toLowerCase();
-        // Simple relevance scoring based on keyword occurrence
-        const topicWords = topicLower.split(/\s+/);
-        let score = 0;
-        topicWords.forEach(word => {
-            const occurrences = (contentLower.match(new RegExp(word, 'g')) || []).length;
-            score += occurrences * 10; // Weight each occurrence
-        });
-        // Normalize score to 0-100 range
-        return Math.min(100, score);
-    }
 }
-exports.Context7Client = Context7Client;

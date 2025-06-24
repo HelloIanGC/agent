@@ -1,10 +1,7 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.AICodeGenerator = void 0;
-const context7_client_js_1 = require("./context7-client.js");
-class AICodeGenerator {
+import { Context7Client } from './context7-client.js';
+export class AICodeGenerator {
     constructor() {
-        this.context7Client = new context7_client_js_1.Context7Client();
+        this.context7Client = new Context7Client();
     }
     /**
      * 核心方法：Agent式的SpreadJS代码生成和验证
@@ -292,22 +289,52 @@ Respond with ONLY 'true' if you need documentation, or 'false' if you're confide
      */
     async aiGenerateContext7Topic(userRequest) {
         const topicPrompt = `
-User request: "${userRequest}"
+You are an AI assistant specializing in generating precise search queries for a Retrieval-Augmented Generation (RAG) system. The RAG system searches a structured database of SpreadJS documentation where each entry has a \`codeTitle\` (e.g., "Add Table to Worksheet").
 
-Generate a concise search topic to find relevant documentation for this request.
+Your goal is to analyze the user's request and generate a concise search topic that will directly and accurately match the most relevant \`codeTitle\` in the documentation database.
 
-IMPORTANT:
-- Context7 already searches within SpreadJS documentation scope, so do NOT add "SpreadJS" prefix
-- Focus on the actual operation the user wants to perform
-- Use the key terms from the user's request directly
+**IMPORTANT: SpreadJS Domain Knowledge**
+You must account for these specific SpreadJS concepts:
+1.  **Table vs. TableSheet:**
+    *   \`Table\`: A standard, Excel-like table within a worksheet.
+    *   \`TableSheet\`: A special sheet type where the entire sheet functions as a single, high-performance table.
+    *   **Your Rule:** Unless the user's request explicitly mentions "table sheet" or making the "whole sheet a table", you MUST assume they mean a standard \`Table\`.
+2.  **Chart vs. Data Chart:**
+    *   \`Chart\`: A standard chart (e.g., Pie, Bar, Line) placed on a worksheet.
+    *   \`Data Chart\`: A unique SpreadJS concept for specialized data analysis charts.
+    *   **Your Rule:** Unless the user explicitly uses the term "data chart", you MUST assume they are asking for a standard \`Chart\`.
 
-Examples:
-- If user wants to "add table with range A1:J21", topic should be "add table range"
-- If user wants to "modify cell color", topic should be "cell color formatting"
-- If user wants to "sort data by column", topic should be "sort data column"
-- If user wants to "create chart", topic should be "create chart"
+---
+User Request: "${userRequest}"
+---
 
-Respond with ONLY the search topic (2-5 words), no explanation, no "SpreadJS" prefix.
+**Instructions for Generating the Search Topic:**
+- The topic must be an action-oriented phrase, like a "How-To" guide title.
+- It must be highly relevant to the core operation described in the user request.
+- Use common spreadsheet terminology (e.g., "filter", "sort", "merge cells", "freeze panes").
+- Do NOT include "SpreadJS" in the topic.
+- The topic MUST be between 2 and 5 words.
+
+**Examples:**
+- User Request: "how do I add a table for the data in A1:J21?"
+  - Search Topic: "Add Table to Worksheet"
+
+- User Request: "change the background color of a cell"
+  - Search Topic: "Set Cell Background Color"
+
+- User Request: "I need to sort my data by the first column"
+  - Search Topic: "Sort Data by Column"
+
+- User Request: "can I make a pie chart?"
+  - Search Topic: "Add Pie Chart"
+
+- User Request: "lock the top row so it doesn't move when I scroll"
+  - Search Topic: "Freeze Panes"
+
+- User Request: "I want to make a whole sheet that acts like a database table"
+  - Search Topic: "Create a TableSheet"
+
+Respond with ONLY the generated search topic.
 `;
         try {
             const apiKey = process.env.OPENROUTER_API_KEY;
@@ -835,4 +862,3 @@ ${doc.codeExamples ? doc.codeExamples.join('\n---\n') : 'No examples'}
         return docs.documents.map(doc => doc.title || 'Untitled Document');
     }
 }
-exports.AICodeGenerator = AICodeGenerator;

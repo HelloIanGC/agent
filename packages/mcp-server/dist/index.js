@@ -1,618 +1,254 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const express_1 = __importDefault(require("express"));
-const cors_1 = __importDefault(require("cors"));
-const ws_1 = require("ws");
-const http_1 = require("http");
-const tools_js_1 = require("./tools.js");
-const config_js_1 = require("./config.js");
-const logger_js_1 = require("./logger.js");
-const ai_code_generator_js_1 = require("./ai-code-generator.js");
-// Simple utility functions for the new protocol
-const generateId = () => {
-    return Math.random().toString(36).substring(2) + Date.now().toString(36);
-};
-// AI Agent Decision Engine for determining tool usage
-class AIAgentDecisionEngine {
-    constructor(mcpTools) {
-        this.mcpTools = mcpTools;
-    }
-    async makeDecision(userRequest) {
-        const prompt = {
-            messages: [
-                {
-                    role: "system",
-                    content: `You are an AI agent that decides how to handle SpreadJS operations.
-
-You have access to these MCP tools:
-1. query_context7 - Get SpreadJS documentation
-2. execute_spreadjs_queries - Get current spreadsheet state
-3. execute_spreadjs_operations - Execute SpreadJS code
-
-For each user request, decide:
-1. Do you need Context7 documentation? (simple operations like "get A1 value" don't need docs)
-2. What specific Context7 query would be most helpful?
-3. What SpreadJS state queries do you need? (only query what you actually need)
-4. What execution strategy to use: simple (direct execution), validated (with verification), or iterative (multiple attempts)
-
-Respond in JSON format:
-{
-  "needsContext7": boolean,
-  "context7Query": "specific search terms for SpreadJS docs",
-  "requiredQueries": [
+#!/usr/bin/env node
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, } from '@modelcontextprotocol/sdk/types.js';
+import { MCPTools } from './tools.js';
+import { LangGraphSpreadJSAgent } from './langgraph-agent.js';
+// Create server and tools instances
+const server = new Server({
+    name: 'spreadjs-mcp-server',
+    version: '1.0.0',
+}, {
+    capabilities: {
+        tools: {},
+    },
+});
+const mcpTools = new MCPTools();
+const langGraphAgent = new LangGraphSpreadJSAgent(mcpTools);
+/**
+ * MCP Server for SpreadJS Integration with LangGraph Agent
+ *
+ * Two modes of operation:
+ * 1. Direct tool calls (for detailed control)
+ * 2. LangGraph agent (for autonomous AI workflow)
+ */
+// Enhanced tool list for both modes
+const tools = [
+    // Direct tool access (existing)
     {
-      "code": "JavaScript code to get state",
-      "description": "What this query does",
-      "resultKey": "key for storing result"
-    }
-  ],
-  "executionStrategy": "simple|validated|iterative",
-  "reasoning": "Why you made these decisions"
-}`
-                },
-                {
-                    role: "user",
-                    content: `User request: "${userRequest}"\n\nWhat's your strategy for handling this request?`
-                }
-            ],
-            function_call: {
-                name: "make_agent_decision",
-                description: "Decide how to handle a SpreadJS user request",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        needsContext7: { type: "boolean" },
-                        context7Query: { type: "string" },
-                        requiredQueries: {
-                            type: "array",
-                            items: {
-                                type: "object",
-                                properties: {
-                                    code: { type: "string" },
-                                    description: { type: "string" },
-                                    resultKey: { type: "string" }
-                                }
-                            }
-                        },
-                        executionStrategy: { type: "string", enum: ["simple", "validated", "iterative"] },
-                        reasoning: { type: "string" }
-                    }
-                }
-            }
-        };
-        try {
-            const aiResponse = await this.callAI(prompt);
-            // AI Decision logged through structured logging
-            return aiResponse;
-        }
-        catch (error) {
-            logger_js_1.logger.error('AI decision failed, using fallback', { error: error instanceof Error ? error.message : String(error) });
-            // Fallback to minimal strategy
-            return {
-                needsContext7: true,
-                context7Query: `SpreadJS ${userRequest}`,
-                requiredQueries: [
-                    {
-                        code: 'spread.getActiveSheet().getActiveRowIndex() + "," + spread.getActiveSheet().getActiveColumnIndex()',
-                        description: 'Get active cell position',
-                        resultKey: 'activeCell'
-                    }
-                ],
-                executionStrategy: 'simple'
-            };
-        }
-    }
-    async callAI(prompt) {
-        // Use the same AI service as the code generator
-        const response = await fetch(`https://openrouter.ai/api/v1/chat/completions`, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': 'http://localhost:3001',
-                'X-Title': 'SpreadJS MCP Agent'
+        name: 'query_context7',
+        description: 'Query Context7 for SpreadJS API documentation',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                topic: { type: 'string', description: 'Topic to search for in documentation' },
+                maxTokens: { type: 'number', description: 'Maximum tokens to retrieve', default: 5000 }
             },
-            body: JSON.stringify({
-                model: 'anthropic/claude-3.5-sonnet',
-                messages: prompt.messages,
-                max_tokens: 1000,
-                temperature: 0.1
-            })
-        });
-        const data = await response.json();
-        const content = data.choices[0].message.content;
-        // Parse JSON response
-        const jsonMatch = content.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]);
+            required: ['topic']
         }
-        throw new Error('Failed to parse AI decision response');
+    },
+    {
+        name: 'query_spreadjs',
+        description: 'Query current SpreadJS state',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                queries: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            id: { type: 'string', description: 'Unique identifier for this query' },
+                            code: { type: 'string', description: 'JavaScript code to execute for querying' },
+                            description: { type: 'string', description: 'Human-readable description of what this query does' },
+                            resultKey: { type: 'string', description: 'Key to store the result under' }
+                        },
+                        required: ['id', 'code', 'description', 'resultKey']
+                    }
+                }
+            },
+            required: ['queries']
+        }
+    },
+    {
+        name: 'query_user',
+        description: 'Ask the user a question for clarification',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                question: { type: 'string', description: 'The question to ask the user' },
+                context: { type: 'string', description: 'Additional context about why this question is being asked' }
+            },
+            required: ['question']
+        }
+    },
+    {
+        name: 'execute_spreadjs',
+        description: 'Execute SpreadJS operations',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                code: { type: 'string', description: 'JavaScript code to execute' },
+                description: { type: 'string', description: 'Human-readable description of the operation' }
+            },
+            required: ['code', 'description']
+        }
+    },
+    {
+        name: 'run_langgraph_agent',
+        description: 'Run the full LangGraph agent (requires LangChain dependencies) to complete a user request automatically',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                userRequest: { type: 'string', description: 'The user request to complete autonomously' },
+                streaming: { type: 'boolean', description: 'Whether to stream progress updates', default: false }
+            },
+            required: ['userRequest']
+        }
     }
-}
-// True AI-driven request handler
-async function handleUserRequest(ws, message) {
+];
+// Register tools
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return { tools };
+});
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
     try {
-        const { input, context } = message.data;
-        // Send state update - agent is thinking
-        ws.send(JSON.stringify({
-            id: generateId(),
-            type: 'state_update',
-            timestamp: Date.now(),
-            data: {
-                agentStatus: 'thinking',
-                currentTask: input
-            }
-        }));
-        console.log('Processing user request with AI Agent:', input);
-        // Step 1: AI decides the strategy
-        const decisionEngine = new AIAgentDecisionEngine(mcpTools);
-        const decision = await decisionEngine.makeDecision(input);
-        console.log('AI Decision:', decision);
-        let context7Result = null;
-        let context7Time = 0;
-        // Step 2: Conditionally query Context7 based on AI decision
-        if (decision.needsContext7 && decision.context7Query) {
-            const context7StartTime = Date.now();
-            try {
-                context7Result = await mcpTools.queryContext7({
-                    topic: decision.context7Query,
-                    maxTokens: 5000
-                });
-                console.log('Context7 query completed:', context7Result.success, 'Documents:', context7Result.documents?.length || 0);
-            }
-            catch (error) {
-                console.error('Context7 query failed:', error);
-                context7Result = { success: false, error: error instanceof Error ? error.message : 'Context7 query failed' };
-            }
-            context7Time = Date.now() - context7StartTime;
+        switch (name) {
+            case 'query_context7':
+                return await handleQueryContext7(args);
+            case 'query_spreadjs':
+                return await handleQuerySpreadjs(args);
+            case 'query_user':
+                return await handleQueryUser(args);
+            case 'execute_spreadjs':
+                return await handleExecuteSpreadjs(args);
+            case 'run_langgraph_agent':
+                return await handleLangGraphAgent(args);
+            default:
+                throw new Error(`Unknown tool: ${name}`);
         }
-        else {
-            console.log('AI decided Context7 not needed for this request');
-        }
-        // Step 3: Execute AI-determined queries only
-        let queryResult = { success: true, results: {} };
-        let queryTime = 0;
-        if (decision.requiredQueries.length > 0) {
-            const queryStartTime = Date.now();
-            try {
-                // Add IDs to queries
-                const queriesWithIds = decision.requiredQueries.map(q => ({
-                    ...q,
-                    id: generateId()
-                }));
-                queryResult = await mcpTools.executeSpreadJSQueries({ queries: queriesWithIds });
-                console.log('AI-determined queries completed:', queryResult.success);
+    }
+    catch (error) {
+        console.error(`Error executing tool ${name}:`, error);
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: `Error: ${error instanceof Error ? error.message : 'Unknown error occurred'}`
+                }
+            ]
+        };
+    }
+});
+// Tool handlers (existing direct tool access)
+async function handleQueryContext7(args) {
+    console.log('🔍 Direct Context7 query:', args);
+    const result = await mcpTools.queryContext7(args);
+    return {
+        content: [
+            {
+                type: 'text',
+                text: JSON.stringify(result, null, 2)
             }
-            catch (error) {
-                console.error('SpreadJS queries failed:', error);
-                queryResult = { success: false, error: error instanceof Error ? error.message : 'SpreadJS queries failed' };
+        ]
+    };
+}
+async function handleQuerySpreadjs(args) {
+    console.log('📊 Direct SpreadJS query:', args);
+    const result = await mcpTools.querySpreadjs(args);
+    return {
+        content: [
+            {
+                type: 'text',
+                text: JSON.stringify(result, null, 2)
             }
-            queryTime = Date.now() - queryStartTime;
-        }
-        else {
-            console.log('AI decided no state queries needed');
-        }
-        // Step 4: Execute with AI-chosen strategy
-        const execStartTime = Date.now();
-        let aiGenerationResult;
-        if (decision.executionStrategy === 'validated' || decision.executionStrategy === 'iterative') {
-            // Use the Agent version with validation
-            aiGenerationResult = await aiCodeGenerator.executeAsAgent({
-                userRequest: input,
-                spreadjsContext: queryResult,
-                documentationContext: context7Result,
-                maxRetries: decision.executionStrategy === 'iterative' ? 3 : 1,
-                requireValidation: true
-            });
-        }
-        else {
-            // Use simple generation
-            aiGenerationResult = await aiCodeGenerator.generateSpreadJSCode({
-                userRequest: input,
-                spreadjsContext: queryResult,
-                documentationContext: context7Result
-            });
-        }
-        console.log('AI Generated code:', aiGenerationResult.code);
-        console.log('AI Confidence:', aiGenerationResult.confidence);
-        console.log('AI Explanation:', aiGenerationResult.explanation);
-        // Step 5: Execute the operation if code was generated successfully
-        let executionResult;
-        if (aiGenerationResult.success && aiGenerationResult.code) {
-            try {
-                executionResult = await mcpTools.executeSpreadJSOperations({
-                    code: aiGenerationResult.code,
-                    description: `AI-generated operation: ${input}`
-                });
-                console.log('Operation execution completed:', executionResult.success);
+        ]
+    };
+}
+async function handleQueryUser(args) {
+    console.log('❓ Direct user query:', args);
+    const result = await mcpTools.queryUser(args);
+    return {
+        content: [
+            {
+                type: 'text',
+                text: JSON.stringify(result, null, 2)
             }
-            catch (error) {
-                console.error('Operation execution failed:', error);
-                executionResult = { success: false, error: error instanceof Error ? error.message : 'Operation execution failed' };
+        ]
+    };
+}
+async function handleExecuteSpreadjs(args) {
+    console.log('⚡ Direct SpreadJS execution:', args);
+    const result = await mcpTools.executeSpreadjs(args);
+    return {
+        content: [
+            {
+                type: 'text',
+                text: JSON.stringify(result, null, 2)
             }
-        }
-        else {
-            executionResult = {
-                success: false,
-                error: aiGenerationResult.error || 'Code generation failed'
+        ]
+    };
+}
+// LangGraph agent handler (new autonomous mode)
+async function handleLangGraphAgent(args) {
+    console.log('🤖 Running LangGraph autonomous agent:', args);
+    try {
+        if (args.streaming) {
+            // Stream progress updates
+            const updates = [];
+            const stream = langGraphAgent.streamUserRequest(args.userRequest);
+            for await (const step of stream) {
+                updates.push(step);
+                console.log('🔄 Agent step:', step);
+            }
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            success: true,
+                            type: 'streaming_complete',
+                            allSteps: updates,
+                            finalResult: updates[updates.length - 1]
+                        }, null, 2)
+                    }
+                ]
             };
         }
-        const executionTime = Date.now() - execStartTime;
-        const totalTime = context7Time + queryTime + executionTime;
-        if (executionResult.success) {
-            // Send successful AI response
-            ws.send(JSON.stringify({
-                id: generateId(),
-                type: 'ai_response',
-                timestamp: Date.now(),
-                data: {
-                    response: `成功处理您的请求："${input}"。执行时间：${totalTime}ms`,
-                    conversationId: message.id,
-                    codeGenerated: aiGenerationResult.code,
-                    executionResult: {
-                        success: true,
-                        result: executionResult.result,
-                        executionTime: totalTime
-                    }
-                }
-            }));
-            // Send execution steps as tool calls
-            const toolCalls = [
-                ...(decision.needsContext7 && context7Result ? [{
-                        id: generateId(),
-                        name: 'query_context7',
-                        status: context7Result.success ? 'success' : 'error',
-                        args: { topic: decision.context7Query || input },
-                        result: context7Result.success ? context7Result : undefined,
-                        error: context7Result.success ? undefined : context7Result.error,
-                        timestamp: Date.now() - totalTime + context7Time
-                    }] : []),
-                ...(decision.requiredQueries.length > 0 ? [{
-                        id: generateId(),
-                        name: 'execute_spreadjs_queries',
-                        status: queryResult.success ? 'success' : 'error',
-                        args: { queries: decision.requiredQueries.map((q) => q.description) },
-                        result: queryResult.success ? queryResult : undefined,
-                        error: queryResult.success ? undefined : queryResult.error,
-                        timestamp: Date.now() - totalTime + context7Time + queryTime
-                    }] : []),
-                {
-                    id: generateId(),
-                    name: 'execute_spreadjs_operations',
-                    status: executionResult.success ? 'success' : 'error',
-                    args: { code: aiGenerationResult.code, description: `AI-generated operation: ${input}` },
-                    result: executionResult.success ? executionResult : undefined,
-                    error: executionResult.success ? undefined : executionResult.error,
-                    timestamp: Date.now() - executionTime
-                }
-            ];
-            // Send final state update with real execution data
-            ws.send(JSON.stringify({
-                id: generateId(),
-                type: 'state_update',
-                timestamp: Date.now(),
-                data: {
-                    agentStatus: 'idle',
-                    currentTask: undefined,
-                    toolCalls: toolCalls,
-                    generatedCode: [{
-                            id: generateId(),
-                            code: aiGenerationResult.code,
-                            description: `AI生成的操作: ${input}`,
-                            language: 'javascript',
-                            timestamp: Date.now()
-                        }]
-                }
-            }));
-        }
         else {
-            // Send error response
-            ws.send(JSON.stringify({
-                id: generateId(),
-                type: 'ai_response',
-                timestamp: Date.now(),
-                data: {
-                    response: `处理请求"${input}"时发生错误：${executionResult.error}`,
-                    conversationId: message.id,
-                    executionResult: {
-                        success: false,
-                        error: executionResult.error,
-                        executionTime: totalTime
+            // Run to completion
+            const result = await langGraphAgent.processUserRequest(args.userRequest);
+            return {
+                content: [
+                    {
+                        type: 'text',
+                        text: JSON.stringify({
+                            success: true,
+                            type: 'complete',
+                            result: result
+                        }, null, 2)
                     }
-                }
-            }));
-            // Send error state update
-            ws.send(JSON.stringify({
-                id: generateId(),
-                type: 'state_update',
-                timestamp: Date.now(),
-                data: {
-                    agentStatus: 'error',
-                    currentTask: undefined
-                }
-            }));
+                ]
+            };
         }
     }
     catch (error) {
-        console.error('Error handling user request:', error);
-        // Send error response
-        ws.send(JSON.stringify({
-            id: generateId(),
-            type: 'error',
-            timestamp: Date.now(),
-            data: {
-                code: 'AI_ERROR',
-                message: error instanceof Error ? error.message : 'Unknown error processing request',
-                details: error
-            }
-        }));
-        // Send error state update
-        ws.send(JSON.stringify({
-            id: generateId(),
-            type: 'state_update',
-            timestamp: Date.now(),
-            data: {
-                agentStatus: 'error',
-                currentTask: undefined
-            }
-        }));
+        return {
+            content: [
+                {
+                    type: 'text',
+                    text: JSON.stringify({
+                        success: false,
+                        error: error instanceof Error ? error.message : 'Unknown error',
+                        fallback: 'Use direct tool calls instead'
+                    }, null, 2)
+                }
+            ]
+        };
     }
 }
-// Note: Removed old helper functions - now using true AI decision making
-const app = (0, express_1.default)();
-const PORT = config_js_1.config.server.port;
-app.use((0, cors_1.default)());
-app.use(express_1.default.json());
-// Initialize MCP Tools and AI Code Generator
-const mcpTools = new tools_js_1.MCPTools();
-const aiCodeGenerator = new ai_code_generator_js_1.AICodeGenerator();
-// Helper function to handle MCP tool calls via WebSocket
-async function handleMCPToolCall(ws, message, toolName) {
-    try {
-        let result;
-        switch (toolName) {
-            case 'query_context7':
-                result = await mcpTools.queryContext7(message.data);
-                break;
-            case 'execute_spreadjs_queries':
-                result = await mcpTools.executeSpreadJSQueries(message.data);
-                break;
-            case 'execute_spreadjs_operations':
-                result = await mcpTools.executeSpreadJSOperations(message.data);
-                break;
-            default:
-                throw new Error(`Unknown tool: ${toolName}`);
-        }
-        ws.send(JSON.stringify({
-            type: message.type,
-            id: message.id,
-            success: true,
-            result,
-            timestamp: Date.now()
-        }));
-    }
-    catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        console.error(`Error executing ${toolName}:`, error);
-        ws.send(JSON.stringify({
-            type: message.type,
-            id: message.id,
-            success: false,
-            error: errorMessage,
-            timestamp: Date.now()
-        }));
-    }
-}
-// Health check endpoint
-app.get('/health', (req, res) => {
-    const requestId = Math.random().toString(36).substring(2);
-    logger_js_1.logger.info('Health check requested', {}, requestId);
-    res.json({
-        status: 'healthy',
-        timestamp: new Date().toISOString(),
-        tools: mcpTools.getToolDefinitions().map(tool => tool.name),
-        config: {
-            nodeEnv: config_js_1.config.server.nodeEnv,
-            logLevel: config_js_1.config.server.logLevel
-        }
-    });
-});
-// Get available tools
-app.get('/tools', (req, res) => {
-    const requestId = Math.random().toString(36).substring(2);
-    logger_js_1.logger.info('Tools list requested', {}, requestId);
-    res.json({
-        tools: mcpTools.getToolDefinitions(),
-        timestamp: new Date().toISOString()
-    });
-});
-// MCP Tool endpoints
-app.post('/tools/query_context7', async (req, res) => {
-    try {
-        const result = await mcpTools.queryContext7(req.body);
-        res.json({ success: true, result });
-    }
-    catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        res.status(500).json({ success: false, error: errorMessage });
-    }
-});
-app.post('/tools/execute_spreadjs_queries', async (req, res) => {
-    try {
-        const result = await mcpTools.executeSpreadJSQueries(req.body);
-        res.json({ success: true, result });
-    }
-    catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        res.status(500).json({ success: false, error: errorMessage });
-    }
-});
-app.post('/tools/execute_spreadjs_operations', async (req, res) => {
-    try {
-        const result = await mcpTools.executeSpreadJSOperations(req.body);
-        res.json({ success: true, result });
-    }
-    catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        res.status(500).json({ success: false, error: errorMessage });
-    }
-});
-// CopilotKit API endpoint
-app.post('/api/copilotkit', async (req, res) => {
-    try {
-        console.log('CopilotKit API request received:');
-        console.log('Headers:', req.headers);
-        console.log('Body:', JSON.stringify(req.body, null, 2));
-        const { messages, model, functions } = req.body;
-        // More lenient validation - allow empty messages for initial requests
-        if (!messages || !Array.isArray(messages)) {
-            console.log('Invalid messages format, providing default response');
-            return res.json({
-                choices: [{
-                        message: {
-                            role: 'assistant',
-                            content: '我是 SpreadJS AI 助手。我可以帮助您处理电子表格操作。请告诉我您想要做什么，我会通过工作流系统来执行您的请求。'
-                        },
-                        finish_reason: 'stop'
-                    }]
-            });
-        }
-        const lastMessage = messages[messages.length - 1];
-        // Check if this is a function call request
-        if (functions && Array.isArray(functions) && functions.length > 0) {
-            const executeAIWorkflowFunction = functions.find((f) => f.name === 'executeAIWorkflow');
-            if (executeAIWorkflowFunction && lastMessage?.content) {
-                // Return a function call response
-                res.json({
-                    choices: [{
-                            message: {
-                                role: 'assistant',
-                                content: null,
-                                function_call: {
-                                    name: 'executeAIWorkflow',
-                                    arguments: JSON.stringify({
-                                        userRequest: lastMessage.content
-                                    })
-                                }
-                            },
-                            finish_reason: 'function_call'
-                        }]
-                });
-                return;
-            }
-        }
-        // Return a regular chat response
-        res.json({
-            choices: [{
-                    message: {
-                        role: 'assistant',
-                        content: '我是 SpreadJS AI 助手。我可以帮助您处理电子表格操作。请告诉我您想要做什么，我会通过工作流系统来执行您的请求。'
-                    },
-                    finish_reason: 'stop'
-                }]
-        });
-    }
-    catch (error) {
-        console.error('CopilotKit API error:', error);
-        res.status(500).json({
-            error: {
-                message: error instanceof Error ? error.message : 'Unknown error',
-                type: 'api_error'
-            }
-        });
-    }
-});
-// Create HTTP server
-const server = new http_1.Server(app);
-// Create WebSocket server for real-time communication with frontend
-const wss = new ws_1.WebSocketServer({
-    server,
-    path: '/ws'
-});
-wss.on('connection', (ws) => {
-    console.log('WebSocket client connected');
-    // Add client to MCP tools for broadcasting
-    mcpTools.addWSClient(ws);
-    // Send initial state using new protocol
-    ws.send(JSON.stringify({
-        id: generateId(),
-        type: 'state_update',
-        timestamp: Date.now(),
-        data: {
-            agentStatus: 'idle',
-            toolCalls: [],
-            generatedCode: [],
-            availableTools: mcpTools.getToolDefinitions().map(t => t.name)
-        }
-    }));
-    ws.on('message', async (message) => {
-        try {
-            const data = JSON.parse(message.toString());
-            console.log('Received WebSocket message:', data);
-            // Handle different message types using new unified protocol
-            switch (data.type) {
-                case 'user_request':
-                    await handleUserRequest(ws, data);
-                    break;
-                case 'ping':
-                    ws.send(JSON.stringify({
-                        id: generateId(),
-                        type: 'pong',
-                        timestamp: Date.now()
-                    }));
-                    break;
-                // Handle frontend responses
-                case 'query_response':
-                    console.log('Query response received:', data);
-                    break;
-                case 'operation_response':
-                    console.log('Operation response received:', data);
-                    break;
-                // Legacy support for old message types
-                case 'query_execution_result':
-                    console.log('Query execution result:', data);
-                    break;
-                case 'operation_execution_result':
-                    console.log('Operation execution result:', data);
-                    break;
-                default:
-                    console.log('Unknown message type:', data.type);
-            }
-        }
-        catch (error) {
-            console.error('Error parsing WebSocket message:', error);
-        }
-    });
-    ws.on('close', () => {
-        console.log('WebSocket client disconnected');
-        mcpTools.removeWSClient(ws);
-    });
-    ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        mcpTools.removeWSClient(ws);
-    });
-});
 // Start server
-server.listen(PORT, () => {
-    console.log(`🚀 MCP Server running on port ${PORT}`);
-    console.log(`📊 Health check: http://localhost:${PORT}/health`);
-    console.log(`🔧 Tools endpoint: http://localhost:${PORT}/tools`);
-    console.log(`🔌 WebSocket endpoint: ws://localhost:${PORT}/ws`);
-    console.log(`📁 Available tools: ${mcpTools.getToolDefinitions().map(t => t.name).join(', ')}`);
-});
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('SIGTERM received, shutting down gracefully');
-    server.close(() => {
-        console.log('Process terminated');
-    });
-});
-process.on('SIGINT', () => {
-    console.log('SIGINT received, shutting down gracefully');
-    server.close(() => {
-        console.log('Process terminated');
-    });
+async function main() {
+    console.log('🚀 Starting SpreadJS MCP Server with LangGraph Support...');
+    console.log('📚 Available modes:');
+    console.log('  1. Direct tool calls: query_context7, query_spreadjs, query_user, execute_spreadjs');
+    console.log('  2. Full LangGraph agent: run_langgraph_agent (dependencies pending)');
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.log('✅ MCP Server running on stdio');
+}
+main().catch((error) => {
+    console.error('💥 Server startup failed:', error);
+    process.exit(1);
 });
