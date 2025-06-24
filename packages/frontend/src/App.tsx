@@ -211,9 +211,20 @@ function App() {
       case 'execute_operation':
         handleExecuteOperation(message);
         break;
+      case 'query_response':
+        // Internal validation message, just log
+        console.log('Query response received:', message);
+        break;
+      case 'operation_response':
+        // Internal validation message, just log
+        console.log('Operation response received:', message);
+        break;
+      case 'execution_result':
+        // Execution result message, just log
+        console.log('Execution result received:', message);
+        break;
       case 'code_generated':
         console.log('Code generated:', message);
-        // Handle code generation notification
         break;
       case 'pong':
         console.log('Received pong from server');

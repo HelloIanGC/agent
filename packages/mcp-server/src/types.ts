@@ -2,8 +2,8 @@
 export interface Context7Response {
   success: boolean;
   documents: Context7Document[];
-  totalResults: number;
-  queryTime: number;
+  totalTokens: number;
+  error?: string;
 }
 
 export interface Context7Document {

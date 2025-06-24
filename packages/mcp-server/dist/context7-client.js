@@ -4,82 +4,196 @@ exports.Context7Client = void 0;
 class Context7Client {
     constructor() {
         this.baseUrl = 'https://context7.com/api/v1/llmstxt';
-        this.spreadjsDocUrl = 'gist_githubusercontent_com-shutongx-99f7b888d6abe65cc9b38f01a54b018d-raw-9559badf7caf04430cd7de20b8aadf125e3bd038-llms.txt';
-        // Fallback SpreadJS API reference
-        this.fallbackApiReference = {
-            setValue: 'spread.getActiveSheet().setValue(row, col, value)',
-            getValue: 'spread.getActiveSheet().getValue(row, col)',
-            getSelections: 'spread.getActiveSheet().getSelections()',
-            setSelections: 'spread.getActiveSheet().setSelections(selections)',
-            backColor: 'sheet.getRange(row, col, rowCount, colCount).backColor(color)',
-            foreColor: 'sheet.getRange(row, col, rowCount, colCount).foreColor(color)',
-            setFormula: 'sheet.setFormula(row, col, formula)',
-            sort: 'sheet.sort(row, col, rowCount, colCount, sortInfo)',
-            charts: 'sheet.charts.add(name, type, x, y, width, height, dataRange)'
-        };
+        this.spreadjsDocUrl = 'developer_mescius_com-spreadjs-docs-llms.txt';
     }
     async querySpreadJSDocumentation(topic, maxTokens = 2000) {
         try {
+            console.log(`[Context7Client] Querying SpreadJS documentation for topic: ${topic}`);
+            // Use JSON format with proper headers as shown in official documentation
             const url = `${this.baseUrl}/${this.spreadjsDocUrl}?type=json&tokens=${maxTokens}&topic=${encodeURIComponent(topic)}`;
             const response = await fetch(url, {
                 method: 'GET',
                 headers: {
                     'accept': '*/*',
-                    'accept-language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
                     'content-type': 'application/json',
-                    'sec-fetch-dest': 'empty',
-                    'sec-fetch-mode': 'cors',
-                    'sec-fetch-site': 'same-origin'
                 }
             });
             if (!response.ok) {
-                throw new Error(`Context7 API error: ${response.status} ${response.statusText}`);
+                console.error(`[Context7Client] HTTP error: ${response.status} ${response.statusText}`);
+                return {
+                    success: false,
+                    documents: [],
+                    totalTokens: 0,
+                    error: `HTTP ${response.status}: ${response.statusText}`
+                };
             }
+            // Parse as JSON since we're using type=json parameter
             const data = await response.json();
-            console.log("Query Context7 Success, data length:", data.length);
-            // Transform the response to match our interface
+            console.log(`[Context7Client] Received JSON response from Context7:`, Object.keys(data));
             return this.transformContext7Response(data, topic);
         }
         catch (error) {
-            console.error('Error querying Context7:', error);
-            // Return fallback documentation based on topic
-            const fallbackDocuments = this.generateFallbackDocumentation(topic);
+            console.error('[Context7Client] Error querying documentation:', error);
             return {
-                success: true,
-                documents: fallbackDocuments,
-                totalResults: fallbackDocuments.length,
-                queryTime: 0
+                success: false,
+                documents: [],
+                totalTokens: 0,
+                error: error instanceof Error ? error.message : 'Unknown error occurred'
             };
         }
     }
     transformContext7Response(data, topic) {
-        const startTime = Date.now();
-        const documents = [];
-        console.log('Transforming Context7 response, data type:', typeof data, 'isArray:', Array.isArray(data));
-        if (Array.isArray(data)) {
-            // Context7 returns an array of code examples
-            data.forEach((item, index) => {
-                try {
+        try {
+            const documents = [];
+            // Handle JSON response format (type=json parameter)
+            if (typeof data === 'object' && data !== null) {
+                // Check for different JSON response structures
+                let items = [];
+                if (data.results && Array.isArray(data.results)) {
+                    items = data.results;
+                }
+                else if (data.items && Array.isArray(data.items)) {
+                    items = data.items;
+                }
+                else if (data.codeList && Array.isArray(data.codeList)) {
+                    items = data.codeList;
+                }
+                else if (Array.isArray(data)) {
+                    items = data;
+                }
+                else {
+                    console.log('[Context7Client] JSON response structure:', Object.keys(data));
+                    // If it's a single object, treat it as one item
+                    items = [data];
+                }
+                items.forEach((item, index) => {
                     const doc = this.parseContext7Item(item, topic, index);
                     if (doc) {
                         documents.push(doc);
                     }
-                }
-                catch (error) {
-                    console.error('Error parsing Context7 item:', error, item);
-                }
-            });
+                });
+            }
+            // Handle legacy text-based markdown format
+            else if (typeof data === 'string') {
+                const parsedDocs = this.parseMarkdownDocuments(data, topic);
+                documents.push(...parsedDocs);
+            }
+            if (documents.length === 0) {
+                console.log('[Context7Client] No documentation found for topic:', topic);
+                return {
+                    success: true,
+                    documents: [],
+                    totalTokens: 0
+                };
+            }
+            // Sort by relevance score
+            documents.sort((a, b) => b.relevanceScore - a.relevanceScore);
+            const totalTokens = documents.reduce((sum, doc) => sum + doc.content.length / 4, 0);
+            return {
+                success: true,
+                documents,
+                totalTokens: Math.round(totalTokens)
+            };
         }
-        else {
-            console.warn('Context7 response is not an array:', data);
+        catch (error) {
+            console.error('[Context7Client] Error transforming response:', error);
+            return {
+                success: false,
+                documents: [],
+                totalTokens: 0,
+                error: 'Failed to process documentation response'
+            };
         }
-        console.log('Parsed', documents.length, 'documents from Context7 response');
-        return {
-            success: true,
-            documents,
-            totalResults: documents.length,
-            queryTime: Date.now() - startTime
-        };
+    }
+    parseMarkdownDocuments(markdownText, topic) {
+        const documents = [];
+        // Split by document separator (----------------------------------------)
+        const sections = markdownText.split(/^-{20,}$/m).filter(section => section.trim());
+        sections.forEach((section, index) => {
+            const doc = this.parseMarkdownSection(section.trim(), topic, index);
+            if (doc) {
+                documents.push(doc);
+            }
+        });
+        return documents;
+    }
+    parseMarkdownSection(section, topic, index) {
+        try {
+            const lines = section.split('\n');
+            let title = '';
+            let description = '';
+            let source = '';
+            let language = '';
+            let code = '';
+            let currentField = '';
+            let codeStarted = false;
+            for (const line of lines) {
+                const trimmedLine = line.trim();
+                if (trimmedLine.startsWith('TITLE:')) {
+                    title = trimmedLine.substring(6).trim();
+                    currentField = 'title';
+                }
+                else if (trimmedLine.startsWith('DESCRIPTION:')) {
+                    description = trimmedLine.substring(12).trim();
+                    currentField = 'description';
+                }
+                else if (trimmedLine.startsWith('SOURCE:')) {
+                    source = trimmedLine.substring(7).trim();
+                    currentField = 'source';
+                }
+                else if (trimmedLine.startsWith('LANGUAGE:')) {
+                    language = trimmedLine.substring(9).trim();
+                    currentField = 'language';
+                }
+                else if (trimmedLine.startsWith('CODE:')) {
+                    currentField = 'code';
+                }
+                else if (trimmedLine === '```' && currentField === 'code') {
+                    codeStarted = !codeStarted;
+                }
+                else if (codeStarted && currentField === 'code') {
+                    code += line + '\n';
+                }
+                else if (currentField === 'description' && trimmedLine && !trimmedLine.startsWith('TITLE:') && !trimmedLine.startsWith('SOURCE:') && !trimmedLine.startsWith('LANGUAGE:') && !trimmedLine.startsWith('CODE:')) {
+                    description += ' ' + trimmedLine;
+                }
+            }
+            if (!title) {
+                console.warn('Markdown section missing title, skipping:', section.substring(0, 100));
+                return null;
+            }
+            // Extract API methods from code
+            const apiMethods = this.extractApiMethods(code);
+            const codeExamples = code.trim() ? [code.trim()] : [];
+            // Calculate relevance score
+            const relevanceScore = this.calculateRelevanceScore(section, topic);
+            // Create structured content
+            const content = `
+# ${title}
+
+## Description
+${description}
+
+## Source
+${source}
+
+## Code Example
+\`\`\`${language}
+${code.trim()}
+\`\`\`
+      `.trim();
+            return {
+                title,
+                content,
+                codeExamples,
+                apiMethods,
+                relevanceScore
+            };
+        }
+        catch (error) {
+            console.error('Error parsing markdown section:', error);
+            return null;
+        }
     }
     parseContext7Item(item, topic, index) {
         try {
@@ -195,76 +309,6 @@ ${codeExamples.map((code, idx) => `\`\`\`${codeLanguage || 'javascript'}\n${code
         });
         // Normalize score to 0-100 range
         return Math.min(100, score);
-    }
-    // Generate fallback documentation when Context7 is not available
-    generateFallbackDocumentation(topic) {
-        const topicLower = topic.toLowerCase();
-        const relevantApis = [];
-        // Match relevant APIs based on topic
-        if (topicLower.includes('setvalue') || topicLower.includes('设置') || topicLower.includes('值')) {
-            relevantApis.push({
-                name: 'setValue',
-                code: this.fallbackApiReference.setValue,
-                description: 'Set value to a specific cell'
-            });
-        }
-        if (topicLower.includes('getselections') || topicLower.includes('selection') || topicLower.includes('选择')) {
-            relevantApis.push({
-                name: 'getSelections',
-                code: this.fallbackApiReference.getSelections,
-                description: 'Get current cell selections (returns array)'
-            });
-        }
-        if (topicLower.includes('color') || topicLower.includes('颜色') || topicLower.includes('背景')) {
-            relevantApis.push({
-                name: 'backColor',
-                code: this.fallbackApiReference.backColor,
-                description: 'Set background color for cell range'
-            });
-        }
-        if (topicLower.includes('formula') || topicLower.includes('公式') || topicLower.includes('计算')) {
-            relevantApis.push({
-                name: 'setFormula',
-                code: this.fallbackApiReference.setFormula,
-                description: 'Set formula for a cell'
-            });
-        }
-        if (topicLower.includes('sort') || topicLower.includes('排序')) {
-            relevantApis.push({
-                name: 'sort',
-                code: this.fallbackApiReference.sort,
-                description: 'Sort data in a range'
-            });
-        }
-        if (topicLower.includes('chart') || topicLower.includes('图表')) {
-            relevantApis.push({
-                name: 'charts',
-                code: this.fallbackApiReference.charts,
-                description: 'Add chart to the sheet'
-            });
-        }
-        // If no specific APIs matched, provide basic ones
-        if (relevantApis.length === 0) {
-            relevantApis.push({
-                name: 'setValue',
-                code: this.fallbackApiReference.setValue,
-                description: 'Set value to a specific cell'
-            }, {
-                name: 'getSelections',
-                code: this.fallbackApiReference.getSelections,
-                description: 'Get current cell selections (returns array)'
-            });
-        }
-        // Create documentation with code examples
-        const content = relevantApis.map(api => `## ${api.name}\n${api.description}\n\`\`\`javascript\n${api.code}\n\`\`\`\n`).join('\n');
-        const codeExamples = relevantApis.map(api => api.code);
-        return [{
-                title: `SpreadJS Fallback Documentation - ${topic}`,
-                content,
-                codeExamples,
-                apiMethods: relevantApis.map(api => api.name),
-                relevanceScore: 90
-            }];
     }
 }
 exports.Context7Client = Context7Client;

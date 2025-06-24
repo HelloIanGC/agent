@@ -1,6 +1,7 @@
 import { Tool, StateQuery, StateQueryResponse, OperationResponse, ErrorCode, MCPError } from './types.js';
 import { Context7Client } from './context7-client.js';
 import { config } from './config.js';
+import { TIMEOUTS, ERROR_MESSAGES, LIMITS } from './utils/constants.js';
 
 // Simple UUID generator
 function generateId(): string {
@@ -105,7 +106,7 @@ export class MCPTools {
     private async executeOperationOnFrontend(code: string, description: string): Promise<any> {
     // Validate code before execution
     if (!this.isCodeSafe(code)) {
-      throw new Error('Code contains potentially dangerous operations');
+      throw new Error(ERROR_MESSAGES.CODE_UNSAFE);
     }
 
     return new Promise((resolve, reject) => {
@@ -121,8 +122,8 @@ export class MCPTools {
           }
         });
         pendingClients.clear();
-        reject(new Error(`Operation timed out after 15 seconds`));
-      }, 15000);
+        reject(new Error(`${ERROR_MESSAGES.OPERATION_TIMEOUT} after ${TIMEOUTS.OPERATION_TIMEOUT}ms`));
+      }, TIMEOUTS.OPERATION_TIMEOUT);
 
       // Create response handler with proper cleanup
       const responseHandler = (message: string) => {
@@ -181,8 +182,8 @@ export class MCPTools {
   }
 
   private isCodeSafe(code: string): boolean {
-    // Check code length using config
-    if (code.length > config.security.maxCodeLength) {
+    // Check code length using constants
+    if (code.length > LIMITS.MAX_CODE_LENGTH) {
       return false;
     }
 
@@ -199,7 +200,7 @@ export class MCPTools {
     );
 
     // For SpreadJS operations, we expect at least some valid patterns
-    if (code.length > 50 && !hasAllowedPattern) {
+    if (code.length > LIMITS.MIN_CODE_LENGTH_FOR_VALIDATION && !hasAllowedPattern) {
       return false;
     }
 
@@ -518,27 +519,13 @@ export class MCPTools {
   }
 
   private analyzeUserIntent(userRequest: string): any {
-    // Simple intent analysis - in production, this would be more sophisticated
+    // Return basic intent structure without hardcoded pattern matching
+    // Let AI decide the appropriate actions based on user request
     const intent: any = {
-      action: 'unknown',
-      target: 'unknown',
-      parameters: {}
+      userRequest: userRequest,
+      requestType: 'user_operation',
+      timestamp: Date.now()
     };
-
-    const request = userRequest.toLowerCase();
-
-    // Basic intent recognition patterns
-    if (request.includes('set') || request.includes('设置')) {
-      intent.action = 'setValue';
-      intent.target = 'cell';
-    } else if (request.includes('format') || request.includes('格式')) {
-      intent.action = 'format';
-      intent.target = 'cell';
-    } else if (request.includes('delete') || request.includes('删除')) {
-      intent.action = 'delete';
-    } else if (request.includes('insert') || request.includes('插入')) {
-      intent.action = 'insert';
-    }
 
     return intent;
   }
@@ -560,39 +547,15 @@ export class MCPTools {
 
       const results = queryResults.results || {};
 
-      // Check based on intent and available query results
-      switch (intent.action) {
-        case 'setValue':
-          // Look for evidence of value changes in query results
-          const hasValueChanges = this.checkForValueChanges(results, intent);
-          if (hasValueChanges) {
-            executionCheck.isSuccessful = true;
-            executionCheck.confidence = 85;
-            executionCheck.details.push('Value changes detected in query results');
-          } else {
-            executionCheck.details.push('No value changes detected');
-            executionCheck.confidence = 20;
-          }
-          break;
-        case 'format':
-          // Look for formatting changes in query results
-          const hasFormatChanges = this.checkForFormatChanges(results, intent);
-          if (hasFormatChanges) {
-            executionCheck.isSuccessful = true;
-            executionCheck.confidence = 85;
-            executionCheck.details.push('Format changes detected in query results');
-          } else {
-            executionCheck.details.push('No format changes detected');
-            executionCheck.confidence = 20;
-          }
-          break;
-        default:
-          // Generic check - if we got any meaningful results, consider it partially successful
-          if (Object.keys(results).length > 0) {
-            executionCheck.isSuccessful = true;
-            executionCheck.confidence = 60;
-            executionCheck.details.push('Query returned results, execution likely successful');
-          }
+      // Simple execution success check without hardcoded pattern matching
+      // Let AI interpret the results naturally
+      if (Object.keys(results).length > 0) {
+        executionCheck.isSuccessful = true;
+        executionCheck.confidence = 70;
+        executionCheck.details.push('Query returned results, execution likely successful');
+      } else {
+        executionCheck.details.push('No results returned from query execution');
+        executionCheck.confidence = 30;
       }
 
     } catch (error) {
@@ -645,13 +608,8 @@ export class MCPTools {
       recommendations.push('No query results returned. Verify query code is generating return values.');
     }
 
-    if (intent.action === 'setValue' && !this.checkForValueChanges(results, intent)) {
-      recommendations.push('Expected value changes but none detected in query results. Check if setValue operation succeeded.');
-    }
-
-    if (intent.action === 'format' && !this.checkForFormatChanges(results, intent)) {
-      recommendations.push('Expected format changes but none detected in query results. Check if formatting operation succeeded.');
-    }
+    // Generic recommendation without hardcoded pattern matching
+    recommendations.push('Review query results to determine if operation achieved desired outcome.');
 
     return recommendations;
   }
