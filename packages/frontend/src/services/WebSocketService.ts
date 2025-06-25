@@ -1,18 +1,18 @@
 import {
-  BaseMessage,
-  MessageType,
-  MessageHandler,
+  WebSocketMessage,
   generateId,
-  UserRequestMessage
 } from '../../../shared/types';
+
+export type SpecificMessageHandler = (message: WebSocketMessage) => void;
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
   private reconnectTimer: NodeJS.Timeout | null = null;
-  private messageHandlers: Map<string, MessageHandler<BaseMessage>> = new Map();
+  private messageHandlers: Set<SpecificMessageHandler> = new Set();
   private connectionHandlers: (() => void)[] = [];
   private disconnectionHandlers: (() => void)[] = [];
   private errorHandlers: ((error: Error) => void)[] = [];
+  private pingInterval: NodeJS.Timeout | null = null;
 
   private readonly url: string;
   private readonly reconnectDelay = 3000; // 3 seconds
@@ -50,37 +50,30 @@ export class WebSocketService {
     }
   }
 
-  send(message: BaseMessage): void {
-    if (!this.isConnected) {
-      console.warn('WebSocket not connected, queuing message:', message);
-      // Could implement message queuing here
-      return;
-    }
-
-    try {
-      this.ws!.send(JSON.stringify(message));
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      this.handleError(new Error('Failed to send message'));
+  public send(message: any) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const fullMessage: WebSocketMessage = {
+        ...message,
+        id: generateId(),
+        timestamp: Date.now(),
+      } as WebSocketMessage;
+      this.ws.send(JSON.stringify(fullMessage));
+    } else {
+      console.error('WebSocket is not connected.');
     }
   }
 
-  // Convenience methods for specific message types
-  sendUserRequest(input: string, context?: any): void {
-    const message: UserRequestMessage = {
-      id: generateId(),
-      type: MessageType.USER_REQUEST,
-      timestamp: Date.now(),
+  public sendMessage(input: string, context?: any) {
+    this.send({
+      type: 'user_request',
       data: { input, context }
-    };
-    this.send(message);
+    });
   }
 
   // Event handlers
-  onMessage(handler: MessageHandler<BaseMessage>): () => void {
-    const id = generateId();
-    this.messageHandlers.set(id, handler);
-    return () => this.messageHandlers.delete(id);
+  public onMessage(handler: SpecificMessageHandler): () => void {
+    this.messageHandlers.add(handler);
+    return () => this.messageHandlers.delete(handler);
   }
 
   onConnect(handler: () => void): () => void {
@@ -126,11 +119,7 @@ export class WebSocketService {
       this.connectionHandlers.forEach(handler => handler());
 
       // Send ping to establish connection
-      this.send({
-        id: generateId(),
-        type: MessageType.PING,
-        timestamp: Date.now()
-      });
+      this.setupPing();
     };
 
     this.ws.onclose = (event) => {
@@ -152,30 +141,16 @@ export class WebSocketService {
 
     this.ws.onmessage = (event) => {
       try {
-        const message: BaseMessage = JSON.parse(event.data);
+        const message = JSON.parse(event.data);
         this.handleMessage(message);
       } catch (error) {
-        console.error('Failed to parse WebSocket message:', error);
-        this.handleError(new Error('Failed to parse message'));
+        console.error('Failed to parse incoming message:', error);
       }
     };
   }
 
-  private handleMessage(message: BaseMessage): void {
-    // Handle system messages internally
-    if (message.type === MessageType.PONG) {
-      // Pong received, connection is healthy
-      return;
-    }
-
-    // Forward message to all handlers
-    this.messageHandlers.forEach(handler => {
-      try {
-        handler(message);
-      } catch (error) {
-        console.error('Error in message handler:', error);
-      }
-    });
+  private handleMessage(message: WebSocketMessage) {
+    this.messageHandlers.forEach(handler => handler(message));
   }
 
   private handleError(error: Error): void {
@@ -200,6 +175,15 @@ export class WebSocketService {
       console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
       this.connect();
     }, this.reconnectDelay);
+  }
+
+  private setupPing() {
+    if (this.pingInterval) clearInterval(this.pingInterval);
+    this.pingInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        this.send({ type: 'ping' });
+      }
+    }, 30000);
   }
 }
 

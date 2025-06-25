@@ -1,38 +1,49 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Code,
+  MessageSquare,
+  Paperclip,
+} from 'lucide-react';
+
 import { useConversation, useAgentState, useAppStore } from '../store/useAppStore';
 import CodeEditor from './CodeEditor';
+import { WebSocketService } from '../services/WebSocketService';
+import CollapsibleResultViewer from './viewers/CollapsibleResultViewer';
+import ExecuteSpreadJSCallViewer from './viewers/ExecuteSpreadJSCallViewer';
 
 interface ChatInterfaceProps {
-  onUserInput: (input: string) => void;
+  webSocketService: WebSocketService;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ onUserInput }) => {
+// THIS IS WHERE THE OLD COMPONENT DEFINITIONS WERE. THEY ARE NOW DELETED.
+
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ webSocketService }) => {
   const [input, setInput] = useState('');
   const [expandedThinking, setExpandedThinking] = useState(true);
   const conversation = useConversation();
   const agentState = useAgentState();
   const { clearConversation, clearAgentHistory } = useAppStore();
+  const addUserMessage = useAppStore((s) => s.addUserMessage);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const handleSubmit = () => {
-    if (input.trim()) {
-      onUserInput(input.trim());
-      setInput('');
+  const handleSend = () => {
+    if (input.trim() === '') return;
+
+    clearAgentHistory();
+    addUserMessage(input);
+
+    webSocketService.sendMessage(input);
+    setInput('');
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleSubmit();
-    }
-  };
-
-  const formatTimestamp = (timestamp: number) => {
-    return new Date(timestamp).toLocaleTimeString('zh-CN', {
-      hour12: false,
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  const formatTimestamp = (timestamp: number) => new Date(timestamp).toLocaleTimeString();
 
   // Auto-collapse thinking process when task completes
   useEffect(() => {
@@ -49,11 +60,11 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onUserInput }) => {
   }, [agentState.status, agentState.toolCalls.length]);
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="p-4 border-b border-gray-300">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-lg font-semibold">SpreadJS AI助手</h3>
+      <div className="p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-semibold text-gray-800">SpreadJS AI助手</h3>
           {(conversation.length > 0 || agentState.toolCalls.length > 0) && (
             <button
               onClick={() => {
@@ -66,9 +77,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onUserInput }) => {
             </button>
           )}
         </div>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-gray-500 mt-1">
           输入自然语言指令来操作电子表格
         </p>
+
+        {/* Available Tools Section */}
+        {agentState.availableTools.length > 0 && (
+            <div className="mt-3">
+                <h4 className="text-xs font-semibold text-gray-600 mb-1">可用工具:</h4>
+                <div className="flex flex-wrap gap-2">
+                    {agentState.availableTools.map(tool => (
+                        <span key={tool} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-medium rounded-full">
+                            {tool}
+                        </span>
+                    ))}
+                </div>
+            </div>
+        )}
       </div>
 
       {/* Messages */}
@@ -142,9 +167,9 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onUserInput }) => {
               </div>
             ))}
 
-            {/* Real-time AI thinking process */}
+            {/* Real-time AI Task Progress */}
             {(agentState.status !== 'idle' || agentState.toolCalls.length > 0) && (
-              <div className="border border-gray-200 rounded-lg p-3 bg-blue-50">
+              <div className="border-t border-gray-200 p-4 bg-blue-50/50">
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center space-x-2">
                     <div className={`w-2 h-2 rounded-full ${
@@ -176,54 +201,44 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onUserInput }) => {
                 )}
 
                 {expandedThinking && agentState.toolCalls.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="text-xs font-medium text-gray-600 mb-1">当前请求的AI工具调用过程：</div>
-                    {(() => {
-                      // 获取当前请求的工具调用（按时间戳分组，显示最近的一组）
-                      const currentRequestToolCalls = agentState.toolCalls.slice(-3);
-                      // 按时间正序排列（最早的在上面，最新的在下面）
-                      const sortedToolCalls = [...currentRequestToolCalls].sort((a, b) =>
-                        (a.timestamp || 0) - (b.timestamp || 0)
-                      );
-
-                      return sortedToolCalls.map((toolCall, index) => (
-                        <div key={toolCall.id} className="text-xs bg-white rounded p-2 border">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-medium text-gray-700">
-                              {index + 1}. {toolCall.name}
-                            </span>
-                            <span className={`px-2 py-0.5 rounded text-xs ${
-                              toolCall.status === 'success' ? 'bg-green-100 text-green-700' :
-                              toolCall.status === 'error' ? 'bg-red-100 text-red-700' :
-                              'bg-yellow-100 text-yellow-700'
-                            }`}>
-                              {toolCall.status === 'success' ? '✓ 成功' :
-                               toolCall.status === 'error' ? '✗ 失败' : '⏳ 进行中'}
-                            </span>
+                  <div className="space-y-3">
+                    {agentState.toolCalls.map((toolCall) => (
+                      <div key={toolCall.id} className="text-sm bg-white rounded-lg p-3 border border-gray-200 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <div className="flex items-center space-x-2 font-medium text-gray-800">
+                            {toolCall.name === 'query_context7' && <Paperclip className="w-4 h-4 text-blue-500" />}
+                            {toolCall.name === 'execute_spreadjs' && <Code className="w-4 h-4 text-purple-500" />}
+                            {toolCall.name === 'query_user' && <MessageSquare className="w-4 h-4 text-orange-500" />}
+                            <span>{toolCall.name}</span>
                           </div>
-                          {toolCall.error && (
-                            <div className="text-red-600 text-xs mt-1">
-                              错误: {toolCall.error}
-                            </div>
-                          )}
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${
+                            toolCall.status === 'success' ? 'bg-green-100 text-green-800' :
+                            toolCall.status === 'error' ? 'bg-red-100 text-red-800' :
+                            'bg-yellow-100 text-yellow-800 animate-pulse'
+                          }`}>
+                            {toolCall.status}
+                          </span>
                         </div>
-                      ));
-                    })()}
-                  </div>
-                )}
 
-                {expandedThinking && agentState.generatedCode.length > 0 && (
-                  <div className="mt-3">
-                    <div className="text-xs font-medium text-gray-600 mb-1">最新生成的代码：</div>
-                    <div className="bg-white rounded border">
-                      <CodeEditor
-                        code={agentState.generatedCode[agentState.generatedCode.length - 1]?.code || ''}
-                        language="javascript"
-                        height="80px"
-                        theme="vs-light"
-                        readOnly={true}
-                      />
-                    </div>
+                        {/* Conditional rendering for different tools */}
+                        {toolCall.name === 'execute_spreadjs' ? (
+                          <ExecuteSpreadJSCallViewer toolCall={toolCall} />
+                        ) : (
+                          <pre className="mt-2 bg-gray-50 p-2 rounded text-xs overflow-x-auto">
+                            {JSON.stringify(toolCall.args, null, 2)}
+                          </pre>
+                        )}
+
+                        {/* Display result/error for all tools */}
+                        {toolCall.status !== 'pending' && (toolCall.result || toolCall.error) && (
+                            <CollapsibleResultViewer
+                                title={toolCall.status === 'success' ? 'Result' : 'Error'}
+                                content={toolCall.result || toolCall.error}
+                                status={toolCall.status}
+                            />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -232,27 +247,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onUserInput }) => {
         )}
       </div>
 
-      {/* Input */}
-      <div className="p-4 border-t border-gray-300">
-        <div className="flex space-x-2">
-          <input
-            type="text"
+      {/* Input area */}
+      <div className="p-4 border-t border-gray-200">
+        <div className="relative">
+          <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyDown}
             placeholder="输入您的自然语言指令..."
-            className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+            className="w-full p-3 pr-24 border border-gray-300 rounded-lg resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow duration-200"
+            rows={1}
           />
           <button
-            onClick={handleSubmit}
-            disabled={!input.trim()}
-            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleSend}
+            className="absolute right-3 top-1/2 -translate-y-1/2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors"
           >
             发送
           </button>
         </div>
-
-        <div className="text-xs text-gray-400 text-center mt-2">
+        <div className="text-center text-xs text-gray-400 mt-2">
           由本地AI工作流系统处理
         </div>
       </div>

@@ -15,6 +15,59 @@ interface AgentStateViewerProps {
   // No props needed, will use store directly
 }
 
+// New component to render execute_spreadjs tool calls specifically
+const ExecuteSpreadJSCall: React.FC<{ toolCall: any }> = ({ toolCall }) => {
+  const [isResultExpanded, setIsResultExpanded] = useState(true);
+
+  // Safely access nested properties
+  const code = toolCall.args?.code || '';
+  const validate = toolCall.args?.validate || '';
+  const result = toolCall.result;
+  const error = toolCall.error;
+
+  const toggleResult = () => setIsResultExpanded(!isResultExpanded);
+
+  return (
+    <div className="mt-2 space-y-3 text-xs">
+      {/* Code Section */}
+      <div>
+        <label className="block font-semibold text-gray-800 mb-1">执行代码:</label>
+        <CodeEditor code={code} language="javascript" readOnly />
+      </div>
+
+      {/* Validate Section */}
+      {validate && (
+        <div>
+          <label className="block font-semibold text-gray-800 mb-1">验证逻辑:</label>
+          <CodeEditor code={validate} language="javascript" readOnly />
+        </div>
+      )}
+
+      {/* Result Section */}
+      {(result || error) && (
+        <div className="mt-2">
+          <button
+            onClick={toggleResult}
+            className="w-full flex items-center justify-between text-left font-semibold text-gray-800"
+          >
+            执行结果:
+            {isResultExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
+          {isResultExpanded && (
+            <pre
+              className={`p-2 rounded border overflow-x-auto text-xs mt-1 ${
+                result?.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
+              }`}
+            >
+              {JSON.stringify(result || error, null, 2)}
+            </pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const AgentStateViewer: React.FC<AgentStateViewerProps> = () => {
   const connectionStatus = useConnectionStatus();
   const agentState = useAgentState();
@@ -121,9 +174,9 @@ const AgentStateViewer: React.FC<AgentStateViewerProps> = () => {
                     <div className="font-medium">{toolName}</div>
                     <div className="text-gray-600 text-xs mt-1">
                       {toolName === 'query_context7' && '查询Context7文档和代码示例'}
-                      {toolName === 'execute_spreadjs_queries' && '执行SpreadJS查询操作'}
-                      {toolName === 'execute_spreadjs_operations' && '执行SpreadJS操作代码'}
-                      {toolName === 'validate_user_intent' && '验证用户意图'}
+                      {toolName === 'query_spreadjs' && '执行SpreadJS查询操作'}
+                      {toolName === 'execute_spreadjs' && '执行SpreadJS操作代码'}
+                      {toolName === 'query_user' && '确认用户意图'}
                     </div>
                   </div>
                 ))
@@ -179,32 +232,36 @@ const AgentStateViewer: React.FC<AgentStateViewerProps> = () => {
                     </div>
 
                     {expandedItems[toolCall.id] && (
-                      <div className="mt-2 space-y-2 text-xs">
-                        {toolCall.args && (
-                          <div>
-                            <div className="font-medium text-gray-700">参数:</div>
-                            <pre className="bg-white p-2 rounded border overflow-x-auto">
-                              {JSON.stringify(toolCall.args, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                        {toolCall.result && (
-                          <div>
-                            <div className="font-medium text-gray-700">结果:</div>
-                            <pre className="bg-white p-2 rounded border overflow-x-auto max-h-32">
-                              {JSON.stringify(toolCall.result, null, 2)}
-                            </pre>
-                          </div>
-                        )}
-                        {toolCall.error && (
-                          <div>
-                            <div className="font-medium text-red-700">错误:</div>
-                            <div className="bg-red-50 p-2 rounded border text-red-800">
-                              {toolCall.error}
+                      toolCall.name === 'execute_spreadjs' ? (
+                        <ExecuteSpreadJSCall toolCall={toolCall} />
+                      ) : (
+                        <div className="mt-2 space-y-2 text-xs">
+                          {toolCall.args && (
+                            <div>
+                              <div className="font-medium text-gray-700">参数:</div>
+                              <pre className="bg-white p-2 rounded border overflow-x-auto">
+                                {JSON.stringify(toolCall.args, null, 2)}
+                              </pre>
                             </div>
-                          </div>
-                        )}
-                      </div>
+                          )}
+                          {toolCall.result && (
+                            <div>
+                              <div className="font-medium text-gray-700">结果:</div>
+                              <pre className="bg-white p-2 rounded border overflow-x-auto max-h-32">
+                                {JSON.stringify(toolCall.result, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                          {toolCall.error && (
+                            <div>
+                              <div className="font-medium text-gray-700">错误:</div>
+                              <pre className="bg-white p-2 rounded border text-red-600 overflow-x-auto">
+                                {JSON.stringify(toolCall.error, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      )
                     )}
                   </div>
                 ))

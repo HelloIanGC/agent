@@ -1,6 +1,7 @@
 {
   "name": "@spreadjs-mcp/frontend",
   "version": "1.0.0",
+  "type": "module",
   "description": "SpreadJS MCP Frontend with CopilotKit",
   "private": true,
   "scripts": {

@@ -11,10 +11,14 @@ const possibleEnvPaths = [
 let envLoaded = false;
 for (const envPath of possibleEnvPaths) {
   const result = dotenv.config({ path: envPath });
+  console.log(`Resolving .env from: ${envPath}`);
+
   if (!result.error) {
     console.log(`✅ Environment loaded from: ${envPath}`);
     envLoaded = true;
     break;
+  } else {
+    console.log(`❌ Error loading .env from: ${envPath}`);
   }
 }
 
@@ -24,8 +28,6 @@ if (!envLoaded) {
 
 // Debug environment variables
 console.log('🔧 Environment check:');
-console.log('- OPENROUTER_API_KEY exists:', !!process.env.OPENROUTER_API_KEY);
-console.log('- OPENROUTER_MODEL:', process.env.OPENROUTER_MODEL);
 console.log('- Current working directory:', process.cwd());
 
 export interface ServerConfig {
@@ -69,7 +71,7 @@ export class Config {
 
     this.context7 = {
       baseUrl: process.env.CONTEXT7_BASE_URL || 'https://context7.com/api/v1/llmstxt',
-      spreadjsDocUrl: process.env.CONTEXT7_SPREADJS_DOC_URL || 'gist_githubusercontent_com-shutongx-99f7b888d6abe65cc9b38f01a54b018d-raw-9559badf7caf04430cd7de20b8aadf125e3bd038-llms.txt'
+      spreadjsDocUrl: process.env.CONTEXT7_SPREADJS_DOC_URL!,
     };
 
     this.security = {

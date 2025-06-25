@@ -10,19 +10,31 @@ export interface BaseMessage {
   id: string;
   type: MessageType;
   timestamp: number;
-  data?: any;
 }
 
-// Message types enum
-export enum MessageType {
+// All possible message types from backend to frontend
+export type MessageType =
+  | 'user_request'
+  | 'ai_message'
+  | 'tool_call'
+  | 'tool_response'
+  | 'tool_call_add'
+  | 'tool_call_update'
+  | 'agent_status_update'
+  | 'ping'
+  | 'pong'
+  | 'error';
+
+// Message types enum (DEPRECATED, use string literals instead)
+export enum OldMessageType {
   // User interactions
   USER_REQUEST = 'user_request',
 
   // AI responses
-  AI_RESPONSE = 'ai_response',
+  AI_RESPONSE = 'DEPRECATED_AI_RESPONSE',
 
   // State updates
-  STATE_UPDATE = 'state_update',
+  STATE_UPDATE = 'DEPRECATED_STATE_UPDATE',
 
   // Errors
   ERROR = 'error',
@@ -38,42 +50,78 @@ export enum MessageType {
 
 // Specific message types
 export interface UserRequestMessage extends BaseMessage {
-  type: MessageType.USER_REQUEST;
+  type: 'user_request';
   data: {
     input: string;
-    context?: SpreadJSContext;
+    context?: any;
   };
 }
 
-export interface AIResponseMessage extends BaseMessage {
-  type: MessageType.AI_RESPONSE;
+export interface AiMessage extends BaseMessage {
+  type: 'ai_message';
   data: {
-    response: string;
-    codeGenerated?: string;
-    executionResult?: ExecutionResult;
-    conversationId: string;
+    content: string;
+    metadata?: any;
   };
 }
 
-export interface StateUpdateMessage extends BaseMessage {
-  type: MessageType.STATE_UPDATE;
-  data: {
-    toolCalls?: ToolCall[];
-    generatedCode?: GeneratedCode[];
-    agentStatus?: AgentStatus;
-    currentTask?: string;
-    availableTools?: string[];
-  };
+export type AgentStatus = 'idle' | 'thinking' | 'acting' | 'error' | 'executing' | 'generating';
+
+export interface AgentStatusUpdateMessage extends BaseMessage {
+    type: 'agent_status_update';
+    data: {
+        status: AgentStatus;
+        currentTask?: string;
+    };
+}
+
+export interface ToolCallAddMessage extends BaseMessage {
+    type: 'tool_call_add';
+    data: any; // Simplified for now
+}
+
+export interface ToolCallUpdateMessage extends BaseMessage {
+    type: 'tool_call_update';
+    data: any; // Simplified for now
 }
 
 export interface ErrorMessage extends BaseMessage {
-  type: MessageType.ERROR;
+    type: 'error';
+    data: {
+        message: string;
+        details?: any;
+    };
+}
+
+// Frontend to Backend
+export interface ToolResponseMessage extends BaseMessage {
+  type: 'tool_response';
   data: {
-    code: ErrorCode;
-    message: string;
-    details?: any;
+    id: string; // Corresponds to the tool call id
+    result?: any;
+    error?: any;
   };
 }
+
+// Backend to Frontend
+export interface ToolCallMessage extends BaseMessage {
+  type: 'tool_call';
+  data: {
+    id: string;
+    name: string;
+    args: any;
+  };
+}
+
+export type WebSocketMessage =
+  | UserRequestMessage
+  | AiMessage
+  | ToolCallMessage
+  | ToolResponseMessage
+  | AgentStatusUpdateMessage
+  | ToolCallAddMessage
+  | ToolCallUpdateMessage
+  | ErrorMessage;
 
 // Core data types
 export interface ToolCall {
@@ -109,6 +157,7 @@ export interface ConversationMessage {
   content: string;
   timestamp: number;
   metadata?: {
+    tool_calls?: any[];
     codeGenerated?: string;
     executionResult?: ExecutionResult;
   };
@@ -125,9 +174,6 @@ export interface SpreadJSContext {
   };
   activeSheet?: string;
 }
-
-// Agent status
-export type AgentStatus = 'idle' | 'thinking' | 'generating' | 'executing' | 'error';
 
 // Error codes
 export enum ErrorCode {

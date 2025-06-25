@@ -24,28 +24,25 @@ export interface StateQuery {
   id: string;
   code: string;
   description: string;
-  resultKey: string;
+  resultKey?: string;
 }
 
 export interface StateQueryResponse {
   success: boolean;
-  results: Record<string, any>;
-  metadata: {
+  results: any[];
+  metadata?: {
     executionTime: number;
     queryCount: number;
     errors: string[];
   };
+  error?: MCPError;
 }
 
 // SpreadJS Operation types
 export interface OperationResponse {
   success: boolean;
-  result?: {
-    commandId: string;
-    executionTime: number;
-    affectedElements: string[];
-  };
-  error?: string;
+  result?: any;
+  error?: MCPError;
 }
 
 // WebSocket message types for frontend communication
@@ -82,11 +79,7 @@ export interface OperationResponseMessage {
   type: 'operation_response';
   operationId: string;
   success: boolean;
-  result?: {
-    executionTime: number;
-    affectedElements: string[];
-    result?: any;
-  };
+  result?: any;
   error?: string;
 }
 
@@ -119,7 +112,11 @@ export enum ErrorCode {
   CONNECTION_ERROR = 'CONNECTION_ERROR',
   SECURITY_ERROR = 'SECURITY_ERROR',
   CONTEXT7_ERROR = 'CONTEXT7_ERROR',
-  SPREADJS_ERROR = 'SPREADJS_ERROR'
+  SPREADJS_ERROR = 'SPREADJS_ERROR',
+  CONTEXT7_QUERY_FAILED = 'CONTEXT7_QUERY_FAILED',
+  FRONTEND_QUERY_FAILED = 'FRONTEND_QUERY_FAILED',
+  FRONTEND_OPERATION_FAILED = 'FRONTEND_OPERATION_FAILED',
+  USER_PROMPT_TIMEOUT = 'USER_PROMPT_TIMEOUT'
 }
 
 export interface MCPError {

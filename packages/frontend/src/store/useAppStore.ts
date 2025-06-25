@@ -5,10 +5,18 @@ import {
   ConversationMessage,
   ToolCall,
   GeneratedCode,
-  AgentStatus,
   SpreadJSContext,
-  generateId
+  generateId,
+  AgentStatus
 } from '../../../shared/types';
+
+export type ConnectionStatus = 'connected' | 'disconnected' | 'connecting';
+export type MessageAuthor = 'user' | 'ai' | 'system';
+
+export type AgentState = {
+  status: AgentStatus;
+  currentTask: string;
+};
 
 interface AppStore extends AppState {
   // Actions for connection
@@ -20,9 +28,9 @@ interface AppStore extends AppState {
   clearConversation: () => void;
 
   // Actions for agent state
-  setAgentStatus: (status: AgentStatus) => void;
+  setAgentStatus: (status: Partial<AgentState>) => void;
   setCurrentTask: (task?: string) => void;
-  addToolCall: (toolCall: Omit<ToolCall, 'id' | 'timestamp'>) => void;
+  addToolCall: (toolCall: Omit<ToolCall, 'timestamp'>) => void;
   updateToolCall: (id: string, updates: Partial<ToolCall>) => void;
   addGeneratedCode: (code: Omit<GeneratedCode, 'id' | 'timestamp'>) => void;
   setAvailableTools: (tools: string[]) => void;
@@ -85,6 +93,11 @@ export const useAppStore = create<AppStore>()(
     },
 
     addAIMessage: (content, metadata) => {
+      // Filter out empty messages that have no content and no tool calls
+      if (!content?.trim() && (!metadata?.tool_calls || metadata.tool_calls.length === 0)) {
+        return;
+      }
+
       const message: ConversationMessage = {
         id: generateId(),
         type: 'ai',
@@ -102,11 +115,11 @@ export const useAppStore = create<AppStore>()(
     },
 
     // Agent actions
-    setAgentStatus: (status) => {
+    setAgentStatus: (statusUpdate: Partial<AgentState>) => {
       set((state) => ({
         agent: {
           ...state.agent,
-          status,
+          ...statusUpdate,
         },
       }));
     },
@@ -123,7 +136,6 @@ export const useAppStore = create<AppStore>()(
     addToolCall: (toolCallData) => {
       const toolCall: ToolCall = {
         ...toolCallData,
-        id: generateId(),
         timestamp: Date.now(),
       };
       set((state) => ({

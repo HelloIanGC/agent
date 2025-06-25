@@ -3,7 +3,9 @@ export const TIMEOUTS = {
   OPERATION_TIMEOUT: 15000,        // 操作超时 15秒
   QUERY_TIMEOUT: 10000,           // 查询超时 10秒
   VALIDATION_TIMEOUT: 5000,       // 验证超时 5秒
-  RECONNECT_DELAY: 2000           // 重连延迟 2秒
+  USER_PROMPT_TIMEOUT: 60000,       // 用户输入超时 60秒
+  RECONNECT_DELAY: 2000,           // 重连延迟 2秒
+  TOOL_EXECUTION: 30000,           // 工具执行超时 30秒
 } as const;
 
 export const LIMITS = {
@@ -19,7 +21,10 @@ export const ERROR_MESSAGES = {
   QUERY_TIMEOUT: 'Query timed out',
   VALIDATION_FAILED: 'Validation failed',
   CONNECTION_LOST: 'Connection lost',
-  AI_ERROR: 'AI service error'
+  AI_ERROR: 'AI service error',
+  NO_FRONTEND_CLIENTS: 'No frontend clients connected',
+  TOOL_TIMEOUT: 'Tool execution timed out',
+  NO_FRONTEND_CONNECTION: 'No frontend client connected'
 } as const;
 
 export const SCORING = {

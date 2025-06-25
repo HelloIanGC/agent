@@ -1,8 +1,34 @@
+import { config } from './config.js';
+import { logger } from './logger.js';
 import { Context7Response, Context7Document } from './types.js';
 
-export class Context7Client {
-    private baseUrl = 'https://context7.com/api/v1/llmstxt';
-    private spreadjsDocUrl = 'developer_mescius_com-spreadjs-docs-llms.txt';
+class Context7Client {
+    private readonly baseUrl: string;
+    private readonly spreadjsDocUrl: string;
+
+    constructor() {
+        this.baseUrl = config.context7.baseUrl;
+        this.spreadjsDocUrl = config.context7.spreadjsDocUrl;
+    }
+
+    async query(query: string): Promise<any> {
+        const url = `${this.baseUrl}?url=${this.spreadjsDocUrl}&q=${encodeURIComponent(query)}`;
+        logger.info(`Querying Context7: ${url}`);
+        try {
+            const response = await fetch(url);
+            if (!response.ok) {
+                const errorText = await response.text();
+                logger.error(`Context7 API request failed with status ${response.status}`, { error: errorText });
+                throw new Error(`Context7 API request failed: ${errorText}`);
+            }
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.error('Failed to query Context7', { error: message });
+            throw new Error(`Failed to query Context7: ${message}`);
+        }
+    }
 
     async querySpreadJSDocumentation(
         topic: string,
@@ -78,3 +104,5 @@ export class Context7Client {
         }
     }
 }
+
+export const context7Client = new Context7Client();

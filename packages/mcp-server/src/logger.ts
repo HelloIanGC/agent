@@ -1,143 +1,139 @@
-import { config } from './config.js';
 import { ErrorCode } from './types.js';
+import winston from 'winston';
+import path from 'path';
 
 export enum LogLevel {
-  ERROR = 0,
-  WARN = 1,
-  INFO = 2,
-  DEBUG = 3
+  DEBUG = 'debug',
+  INFO = 'info',
+  WARN = 'warn',
+  ERROR = 'error'
 }
 
-export interface LogEntry {
-  timestamp: string;
-  level: LogLevel;
-  message: string;
-  context?: any;
-  error?: Error;
+export interface LogContext {
   userId?: string;
   requestId?: string;
+  toolName?: string;
+  error?: string;
+  [key: string]: any;
 }
 
-export class Logger {
+class Logger {
   private static instance: Logger;
-  private logLevel: LogLevel;
+  private level: LogLevel = LogLevel.INFO;
 
   private constructor() {
-    this.logLevel = this.parseLogLevel(config.server.logLevel);
+    // Private constructor for singleton
   }
 
-  public static getInstance(): Logger {
+  static getInstance(): Logger {
     if (!Logger.instance) {
       Logger.instance = new Logger();
     }
     return Logger.instance;
   }
 
-  private parseLogLevel(level: string): LogLevel {
-    switch (level.toLowerCase()) {
-      case 'error': return LogLevel.ERROR;
-      case 'warn': return LogLevel.WARN;
-      case 'info': return LogLevel.INFO;
-      case 'debug': return LogLevel.DEBUG;
-      default: return LogLevel.INFO;
+  setLevel(level: LogLevel): void {
+    this.level = level;
+  }
+
+  private shouldLog(level: LogLevel): boolean {
+    const levels = Object.values(LogLevel);
+    return levels.indexOf(level) >= levels.indexOf(this.level);
+  }
+
+  private formatMessage(level: LogLevel, message: string, context?: LogContext): string {
+    const timestamp = new Date().toISOString();
+    const contextStr = context ? JSON.stringify(context) : '';
+    return `[${timestamp}] ${level.toUpperCase()}: ${message} ${contextStr}`;
+  }
+
+  debug(message: string, context?: LogContext): void {
+    if (this.shouldLog(LogLevel.DEBUG)) {
+      console.debug(this.formatMessage(LogLevel.DEBUG, message, context));
     }
   }
 
-  private formatLog(entry: LogEntry): string {
-    const timestamp = entry.timestamp;
-    const level = LogLevel[entry.level];
-    const message = entry.message;
-
-    let logString = `[${timestamp}] ${level}: ${message}`;
-
-    if (entry.requestId) {
-      logString += ` [RequestID: ${entry.requestId}]`;
-    }
-
-    if (entry.userId) {
-      logString += ` [UserID: ${entry.userId}]`;
-    }
-
-    if (entry.context) {
-      logString += ` Context: ${JSON.stringify(entry.context)}`;
-    }
-
-    if (entry.error) {
-      logString += `\nError: ${entry.error.message}\nStack: ${entry.error.stack}`;
-    }
-
-    return logString;
-  }
-
-  private log(level: LogLevel, message: string, context?: any, error?: Error, requestId?: string, userId?: string): void {
-    if (level <= this.logLevel) {
-      const entry: LogEntry = {
-        timestamp: new Date().toISOString(),
-        level,
-        message,
-        context,
-        error,
-        requestId,
-        userId
-      };
-
-      const logString = this.formatLog(entry);
-
-      switch (level) {
-        case LogLevel.ERROR:
-          console.error(logString);
-          break;
-        case LogLevel.WARN:
-          console.warn(logString);
-          break;
-        case LogLevel.INFO:
-          console.info(logString);
-          break;
-        case LogLevel.DEBUG:
-          console.debug(logString);
-          break;
-      }
+  info(message: string, context?: LogContext): void {
+    if (this.shouldLog(LogLevel.INFO)) {
+      console.log(this.formatMessage(LogLevel.INFO, message, context));
     }
   }
 
-  public error(message: string, context?: any, error?: Error, requestId?: string, userId?: string): void {
-    this.log(LogLevel.ERROR, message, context, error, requestId, userId);
-  }
-
-  public warn(message: string, context?: any, requestId?: string, userId?: string): void {
-    this.log(LogLevel.WARN, message, context, undefined, requestId, userId);
-  }
-
-  public info(message: string, context?: any, requestId?: string, userId?: string): void {
-    this.log(LogLevel.INFO, message, context, undefined, requestId, userId);
-  }
-
-  public debug(message: string, context?: any, requestId?: string, userId?: string): void {
-    this.log(LogLevel.DEBUG, message, context, undefined, requestId, userId);
-  }
-
-  // Specific logging methods for common scenarios
-  public toolCall(toolName: string, status: 'start' | 'success' | 'error', context?: any, requestId?: string): void {
-    const message = `Tool ${toolName} ${status}`;
-    if (status === 'error') {
-      this.error(message, context, undefined, requestId);
-    } else {
-      this.info(message, context, requestId);
+  warn(message: string, context?: LogContext): void {
+    if (this.shouldLog(LogLevel.WARN)) {
+      console.warn(this.formatMessage(LogLevel.WARN, message, context));
     }
   }
 
-  public websocketEvent(event: string, clientId?: string, context?: any): void {
-    this.debug(`WebSocket ${event}`, { ...context, clientId });
+  error(message: string, context?: LogContext): void {
+    if (this.shouldLog(LogLevel.ERROR)) {
+      console.error(this.formatMessage(LogLevel.ERROR, message, context));
+    }
   }
 
-  public securityEvent(event: string, details: any, requestId?: string): void {
-    this.warn(`Security event: ${event}`, details, requestId);
-  }
-
-  public performanceLog(operation: string, duration: number, context?: any, requestId?: string): void {
-    this.info(`Performance: ${operation} took ${duration}ms`, context, requestId);
+  // Method to log errors with specific error codes
+  logError(code: ErrorCode, message: string, context?: LogContext): void {
+    this.error(`[${code}] ${message}`, context);
   }
 }
 
-// Export singleton instance
+// Export both the class and singleton instance
+export { Logger };
 export const logger = Logger.getInstance();
+
+// Communication logger for frontend-backend communication
+const commLogger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp({ format: 'HH:mm:ss.SSS' }),
+    winston.format.printf((info: any) => {
+      const { timestamp, level, message, ...meta } = info;
+      const metaStr = Object.keys(meta).length ? `\n${JSON.stringify(meta, null, 2)}` : '';
+      return `[${timestamp}] ${level.toUpperCase()}: ${message}${metaStr}`;
+    })
+  ),
+  transports: [
+    new winston.transports.File({
+      filename: path.join(process.cwd(), 'communication.log'),
+      maxsize: 10 * 1024 * 1024, // 10MB
+      maxFiles: 3
+    })
+  ]
+});
+
+// Helper function to log communication events
+export const logComm = {
+  userRequest: (input: string): void => {
+    commLogger.info('📥 USER REQUEST', { input });
+  },
+
+  aiMessage: (content: string, metadata?: any): void => {
+    commLogger.info('🤖 AI MESSAGE', { content, metadata });
+  },
+
+  toolCall: (toolName: string, args: any, toolCallId: string): void => {
+    commLogger.info('🔧 TOOL CALL', { toolName, args, toolCallId });
+  },
+
+  toolResult: (toolCallId: string, success: boolean, result: any, error?: string): void => {
+    commLogger.info('✅ TOOL RESULT', { toolCallId, success, result, error });
+  },
+
+  frontendExecution: (type: 'query' | 'operation', id: string, code: string, validate?: string): void => {
+    commLogger.info('⚡ FRONTEND EXECUTION', {
+      type,
+      id,
+      code: code.length > 200 ? code.substring(0, 200) + '...' : code,
+      fullCode: code,
+      validate
+    });
+  },
+
+  frontendResult: (type: 'query' | 'operation', id: string, success: boolean, result: any, error?: string): void => {
+    commLogger.info('📤 FRONTEND RESULT', { type, id, success, result, error });
+  },
+
+  error: (context: string, error: string, details?: any): void => {
+    commLogger.error('❌ ERROR', { context, error, details });
+  }
+};

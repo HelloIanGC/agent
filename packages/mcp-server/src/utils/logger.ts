@@ -1,15 +1,13 @@
-import { Logger as BaseLogger } from '../logger.js';
+import { logger } from '../logger.js';
 
 /**
  * 改进的日志工具 - 替换分散的console.log
  */
 export class DevLogger {
   private static instance: DevLogger;
-  private baseLogger: BaseLogger;
   private isDevelopment: boolean;
 
   private constructor() {
-    this.baseLogger = BaseLogger.getInstance();
     this.isDevelopment = process.env.NODE_ENV === 'development';
   }
 
@@ -23,77 +21,78 @@ export class DevLogger {
   /**
    * AI决策日志
    */
-  public aiDecision(message: string, context?: any, requestId?: string): void {
+  public aiDecision(message: string, context?: any): void {
     if (this.isDevelopment) {
-      this.baseLogger.info(`[AI Decision] ${message}`, context, requestId);
+      logger.info(`[AI Decision] ${message}`, context);
     }
   }
 
   /**
    * Context7操作日志
    */
-  public context7(message: string, context?: any, requestId?: string): void {
+  public context7(message: string, context?: any): void {
     if (this.isDevelopment) {
-      this.baseLogger.info(`[Context7] ${message}`, context, requestId);
+      logger.info(`[Context7] ${message}`, context);
     }
   }
 
   /**
    * WebSocket操作日志
    */
-  public websocket(message: string, context?: any, requestId?: string): void {
+  public websocket(message: string, context?: any): void {
     if (this.isDevelopment) {
-      this.baseLogger.info(`[WebSocket] ${message}`, context, requestId);
+      logger.info(`[WebSocket] ${message}`, context);
     }
   }
 
   /**
    * 代码生成日志
    */
-  public codeGeneration(message: string, context?: any, requestId?: string): void {
+  public codeGeneration(message: string, context?: any): void {
     if (this.isDevelopment) {
-      this.baseLogger.info(`[Code Gen] ${message}`, context, requestId);
+      logger.info(`[Code Gen] ${message}`, context);
     }
   }
 
   /**
    * 执行结果日志
    */
-  public execution(message: string, context?: any, requestId?: string): void {
+  public execution(message: string, context?: any): void {
     if (this.isDevelopment) {
-      this.baseLogger.info(`[Execution] ${message}`, context, requestId);
+      logger.info(`[Execution] ${message}`, context);
     }
   }
 
   /**
    * 调试日志（仅开发环境）
    */
-  public debug(message: string, context?: any, requestId?: string): void {
+  public debug(message: string, context?: any): void {
     if (this.isDevelopment) {
-      this.baseLogger.debug(message, context, requestId);
+      logger.debug(message, context);
     }
   }
 
   /**
    * 警告日志
    */
-  public warn(message: string, context?: any, requestId?: string): void {
-    this.baseLogger.warn(message, context, requestId);
+  public warn(message: string, context?: any): void {
+    logger.warn(message, context);
   }
 
   /**
    * 错误日志
    */
-  public error(message: string, context?: any, error?: Error, requestId?: string): void {
-    this.baseLogger.error(message, context, error, requestId);
+  public error(message: string, context?: any, error?: Error): void {
+    const errorContext = error ? { ...context, error: error.message, stack: error.stack } : context;
+    logger.error(message, errorContext);
   }
 
   /**
    * 性能日志
    */
-  public performance(operation: string, duration: number, context?: any, requestId?: string): void {
+  public performance(operation: string, duration: number, context?: any): void {
     if (this.isDevelopment) {
-      this.baseLogger.performanceLog(operation, duration, context, requestId);
+      logger.info(`[Performance] ${operation} took ${duration}ms`, context);
     }
   }
 
@@ -102,7 +101,7 @@ export class DevLogger {
    */
   public log(message: string, ...args: any[]): void {
     if (this.isDevelopment) {
-      this.baseLogger.info(message, args.length > 0 ? args : undefined);
+      logger.info(message, args.length > 0 ? { args } : undefined);
     }
   }
 }
