@@ -47,7 +47,7 @@ async function handleUserRequest(ws: WebSocket, message: any) {
     };
 
     try {
-        const stream = await app.stream(initialState, { recursionLimit: 50 });
+        const stream = await app.stream(initialState, { recursionLimit: 25 });
         let lastToolCallId: string | null = null;
 
         for await (const event of stream) {
