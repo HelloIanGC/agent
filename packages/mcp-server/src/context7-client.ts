@@ -79,7 +79,7 @@ class Context7Client {
 
             documents = documents.slice(0, 3).map((doc: any) => ({
                 codeTitle: doc.codeTitle,
-                codeDescription: doc.codeDescription,
+                // codeDescription: doc.codeDescription,
                 pageTitle: doc.pageTitle,
                 codeList: doc.codeList.slice(0, 3),
                 relevance: doc.relevance

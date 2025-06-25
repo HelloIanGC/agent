@@ -63,12 +63,14 @@ const SpreadSheetComponent: React.FC<SpreadSheetComponentProps> = ({ webSocketSe
           const { queries } = args;
           const results = queries.map((query: string) => {
             try {
-              const executeFunction = new Function('spread', 'GC', `return (() => { ${query} })();`);
-              const result = executeFunction(window.spread, window.GC);
-              return { success: true, result };
+              // Ensure the query is an expression that returns a value.
+              // We wrap it in a function to capture the return value.
+              const executeFunction = new Function('spread', 'GC', `return (() => { return ${query} })();`);
+              return executeFunction(window.spread, window.GC);
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : String(error);
-              return { success: false, error: errorMessage };
+              // Return a descriptive error string for the specific failing query.
+              return `Error executing query: "${query}". Reason: ${errorMessage}`;
             }
           });
 

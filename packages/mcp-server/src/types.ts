@@ -13,7 +13,7 @@ export interface CodeListItem {
 
 export interface Context7Document {
   codeTitle: string;
-  codeDescription: string;
+  // codeDescription: string;
   pageTitle: string;
   codeList: CodeListItem[];
   relevance: number;
